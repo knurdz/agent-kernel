@@ -5,13 +5,19 @@ description = "Agentic AI agricultural assistant for smallholder farmers"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph]>=0.8.1",
+    "agentkernel[cli,langgraph,multimodal]>=0.8.1",
     # Pinned: langgraph-prebuilt>=1.0.6 imports ExecutionInfo/ServerInfo
     # from langgraph.runtime, which langgraph 1.0.10 does not provide.
     "fastapi>=0.141.1",
     "langchain-google-genai>=4.3.4",
     "langgraph-prebuilt==1.0.5",
+    "langgraph-supervisor>=0.0.20",
+    "numpy>=1.26.0",
+    "pillow>=10.0.0",
     "python-dotenv>=1.2.3",
+    "torch>=2.2.0",
+    "torchvision>=0.28.0",
+    "transformers>=4.40.0",
     "uvicorn>=0.52.4",
 ]
 
@@ -22,10 +28,14 @@ dev = [
     "isort>=5.0.0",
     "mypy>=1.0.0",
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+    "slow: downloads model weights or calls an LLM; skip with -m 'not slow'",
+]
 
 [tool.uv]
 package = false

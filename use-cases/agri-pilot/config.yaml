@@ -8,5 +8,11 @@ logging:
   ak:
     level: INFO
 
+multimodal:
+  enabled: true
+  max_attachments: 5
+  description_model: "gpt-4o"
+  analysis_model: "gpt-4o"
+
 test:
   mode: fuzzy

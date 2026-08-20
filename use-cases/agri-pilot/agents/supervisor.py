@@ -1,16 +1,17 @@
-"""Triage/supervisor agent for AgriPilot.
+"""Supervisor agent for AgriPilot.
 
-This agent is the entry point for every farmer message. It classifies
-intent and checks farmer_context for missing information before it would
-call a specialist. Specialist routing (create_supervisor) is added from
-Phase 2 onward, once more than one specialist agent exists.
+Routes farmer requests to specialist agents. From Phase 2 onward this is a
+langgraph_supervisor supervisor rather than a standalone agent, now that a
+vision specialist exists to route to. More specialists join `agents=[...]`
+in later phases (knowledge, resource, market).
 """
 
-from langgraph.prebuilt import create_react_agent
+from langgraph_supervisor import create_supervisor
 
 from agentkernel.langgraph import LangGraphToolBuilder
 
 from agents.model import get_chat_model
+from agents.vision_agent import vision_agent
 from tools.context_tools import get_farmer_context, update_farmer_context
 
 model = get_chat_model()
@@ -18,11 +19,8 @@ model = get_chat_model()
 tools = LangGraphToolBuilder.bind([get_farmer_context, update_farmer_context])
 
 TRIAGE_INSTRUCTIONS = """
-You are the triage agent for AgriPilot, an agricultural assistant for
-smallholder farmers. No specialist agents exist yet (they arrive in later
-phases), so for now you answer directly, but you must still classify
-intent and check for missing information exactly as you will once
-specialists are wired in.
+You are the triage supervisor for AgriPilot, an agricultural assistant for
+smallholder farmers.
 
 ## Step 1: Classify intent
 
@@ -38,27 +36,27 @@ Call update_farmer_context with the classified `intent`.
 
 ## Step 2: Check for missing information
 
-Call get_farmer_context first. Before answering, decide what information
-you truly need for this intent and check whether you already have it.
+Call get_farmer_context first. Decide what you truly need for this intent
+and check whether you already have it before asking or delegating.
 
-Example (from the architecture doc): if asked "What fertilizer should I
-use?" and crop, growth_stage, and location are all unknown, do not answer
-yet. Ask one targeted question at a time, starting with crop. Once the
-farmer answers, call update_farmer_context to store it, then continue.
+## Step 3: Delegate or answer
 
-Do not ask for information you already have, and do not ask more questions
-than necessary.
+- If the intent is CROP_HEALTH and the farmer has sent or mentions an
+  image, delegate to the `vision` agent for diagnosis. If no image is
+  attached yet, ask for one before delegating (architecture doc section
+  44, "Please send a clear photo of the affected leaves.").
+- For all other intents, no specialist exists yet (they arrive in later
+  phases). Answer directly, but say plainly if the request needs a
+  capability you don't have yet (weather, market, verified knowledge),
+  and that it is coming soon.
 
-## Step 3: Respond
-
-Once you have enough information, give a short, helpful answer. If the
-request needs a capability you don't have yet (vision, weather, market,
-verified knowledge), say so plainly and explain it is coming soon.
+Do not ask for information you already have, and do not ask more
+questions than necessary.
 """
 
-triage_agent = create_react_agent(
-    name="triage",
-    tools=tools,
+triage_agent = create_supervisor(
     model=model,
+    agents=[vision_agent],
+    tools=tools,
     prompt=TRIAGE_INSTRUCTIONS,
-)
+).compile(name="triage")
