@@ -1,0 +1,26 @@
+{
+  "disclaimer": "Illustrative baseline label rates for demo purposes. Replace with region-verified regulatory data (label rates, PHI, REI) from an authoritative source before any production or field use.",
+  "chemicals": {
+    "copper hydroxide": {
+      "aliases": ["copper-based fungicide", "copper fungicide", "copper oxychloride"],
+      "dosage": {"min": 2.0, "max": 4.0, "unit": "g/L"},
+      "source": "FAO Plant Production and Protection Division - illustrative label rate"
+    },
+    "chlorothalonil": {
+      "aliases": [],
+      "dosage": {"min": 1.5, "max": 2.5, "unit": "g/L"},
+      "source": "FAO Plant Production and Protection Division - illustrative label rate"
+    },
+    "mancozeb": {
+      "aliases": [],
+      "dosage": {"min": 2.0, "max": 3.0, "unit": "g/L"},
+      "source": "FAO Plant Production and Protection Division - illustrative label rate"
+    }
+  },
+  "unsafe_combinations": [
+    {
+      "chemicals": ["chlorothalonil", "mancozeb"],
+      "reason": "Tank-mixing chlorothalonil and mancozeb is not covered by either product label; combined phytotoxicity risk is unverified."
+    }
+  ]
+}

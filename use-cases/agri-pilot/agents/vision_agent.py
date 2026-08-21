@@ -5,9 +5,8 @@ classifies the disease, then applies a confidence threshold before treating
 a prediction as fact (architecture doc sections 20-21).
 """
 
-from langgraph.prebuilt import create_react_agent
-
 from agentkernel.langgraph import LangGraphToolBuilder
+from langgraph.prebuilt import create_react_agent
 
 from agents.model import get_chat_model
 from tools.context_tools import get_farmer_context, update_farmer_context
@@ -15,9 +14,7 @@ from tools.vision_tool import check_image_quality, diagnose_crop_image
 
 model = get_chat_model()
 
-tools = LangGraphToolBuilder.bind(
-    [check_image_quality, diagnose_crop_image, get_farmer_context, update_farmer_context]
-)
+tools = LangGraphToolBuilder.bind([check_image_quality, diagnose_crop_image, get_farmer_context, update_farmer_context])
 
 CONFIDENCE_THRESHOLD = 0.7
 
@@ -53,8 +50,11 @@ diagnose_crop_image.
 
 ## Step 4: Record context
 
-Call update_farmer_context with the crop, if it becomes clear from the
-prediction label, so later specialists don't need to ask again.
+Call update_farmer_context with the crop, and — only when you have stated
+a confident diagnosis — the diagnosed disease name, so the knowledge
+specialist can retrieve a specific treatment without asking again. If you
+did not reach a confident diagnosis, record the crop only; never record a
+disease name that was not diagnosed.
 """
 
 vision_agent = create_react_agent(

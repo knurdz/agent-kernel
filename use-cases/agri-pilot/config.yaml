@@ -14,5 +14,17 @@ multimodal:
   description_model: "gpt-4o"
   analysis_model: "gpt-4o"
 
+guardrail:
+  input:
+    enabled: true
+    type: openai
+    model: gpt-4o-mini
+    config_path: guardrails_input.json
+  output:
+    enabled: true
+    type: openai
+    model: gpt-4o-mini
+    config_path: guardrails_output.json
+
 test:
   mode: fuzzy

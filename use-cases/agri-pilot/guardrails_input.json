@@ -1,0 +1,18 @@
+{
+  "input": {
+    "guardrails": [
+      {
+        "name": "Moderation",
+        "config": {
+          "categories": ["violence", "sexual", "harassment", "self-harm"]
+        }
+      },
+      {
+        "name": "Jailbreak",
+        "config": {
+          "model": "gpt-4o-mini"
+        }
+      }
+    ]
+  }
+}

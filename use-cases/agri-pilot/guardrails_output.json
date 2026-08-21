@@ -1,0 +1,12 @@
+{
+  "output": {
+    "guardrails": [
+      {
+        "name": "Moderation",
+        "config": {
+          "categories": ["violence", "sexual", "harassment", "self-harm"]
+        }
+      }
+    ]
+  }
+}

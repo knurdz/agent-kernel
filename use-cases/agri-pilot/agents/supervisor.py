@@ -6,9 +6,8 @@ adds the knowledge specialist. More specialists join `agents=[...]` in
 later phases (resource, market).
 """
 
-from langgraph_supervisor import create_supervisor
-
 from agentkernel.langgraph import LangGraphToolBuilder
+from langgraph_supervisor import create_supervisor
 
 from agents.knowledge_agent import knowledge_agent
 from agents.model import get_chat_model
@@ -61,13 +60,21 @@ and check whether you already have it before asking or delegating.
   prevention guidance for a disease that is already known (e.g. from a
   prior vision diagnosis, an earlier turn, or because the farmer stated
   the disease name directly in this message), delegate to the
-  `knowledge` agent. After the `vision` agent returns a confident
-  diagnosis, delegate to `knowledge` next so the farmer gets a full
-  recommendation in one reply, not just a disease name.
+  `knowledge` agent.
+- Chain vision into knowledge in the SAME turn: after the `vision` agent
+  returns a confident diagnosis, it records the crop and diagnosed
+  disease in the farmer context — immediately delegate to `knowledge`
+  next so the farmer gets one combined reply with the diagnosis AND a
+  full treatment recommendation, not just a disease name. Do not reply
+  in between the two handoffs.
 - For all other intents, no specialist exists yet (they arrive in later
   phases). Answer directly, but say plainly if the request needs a
   capability you don't have yet (weather, market), and that it is coming
   soon.
+
+Never state a chemical name or dosage yourself, even if you know one:
+treatment recommendations only come from the `knowledge` agent, which
+validates them against the safety rules before replying.
 
 Do not ask for information you already have, and do not ask more
 questions than necessary.
@@ -95,7 +102,9 @@ final reply to the farmer must contain that response's actual content —
 the diagnosis, treatment steps, etc. Never reply with a meta-summary like
 "I have provided the steps" or "I have shared the information above"
 without including the information itself. If the specialist's message is
-already farmer-ready, relay it directly.
+already farmer-ready, relay it directly. Relay safety wording exactly as
+given (including "I cannot safely recommend this") — never soften it,
+and never add chemical names or dosages of your own.
 """
 
 triage_agent = create_supervisor(

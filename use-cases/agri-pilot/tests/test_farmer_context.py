@@ -24,6 +24,7 @@ def test_get_farmer_context_creates_once_and_persists():
         ("language", "si"),
         ("location", "Kandy"),
         ("crop", "tomato"),
+        ("disease", "early blight"),
         ("growth_stage", "flowering"),
         ("previous_case", "early blight, moderate"),
         ("input_type", "text+image"),

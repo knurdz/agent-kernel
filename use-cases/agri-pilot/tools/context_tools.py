@@ -27,6 +27,7 @@ def update_farmer_context(
     language: Optional[str] = None,
     location: Optional[str] = None,
     crop: Optional[str] = None,
+    disease: Optional[str] = None,
     growth_stage: Optional[str] = None,
     previous_case: Optional[str] = None,
     input_type: Optional[str] = None,
@@ -37,12 +38,15 @@ def update_farmer_context(
     Call this whenever the farmer states or implies a fact for one of these
     fields (e.g. names a crop, states their language, or the intent has
     been classified). Only pass the fields you have a new value for; omitted
-    fields keep their previously stored value.
+    fields keep their previously stored value. `disease` should only be
+    passed with a name that was actually diagnosed (e.g. by the vision
+    specialist), never guessed.
     """
     changes = {
         "language": language,
         "location": location,
         "crop": crop,
+        "disease": disease,
         "growth_stage": growth_stage,
         "previous_case": previous_case,
         "input_type": input_type,

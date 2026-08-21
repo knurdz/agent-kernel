@@ -29,6 +29,10 @@ class FarmerContext:
         None until detected or set by the farmer.
     :ivar location: Farmer's location, used for weather/market lookups.
     :ivar crop: The crop under discussion (e.g. "tomato").
+    :ivar disease: The diagnosed disease for that crop (e.g. "early blight"),
+        recorded only by the vision specialist after a confident diagnosis,
+        so the knowledge specialist can run a disease-specific retrieval
+        without asking the farmer again.
     :ivar growth_stage: Growth stage of that crop (e.g. "flowering").
     :ivar previous_case: Short summary of the last resolved case, so a
         follow-up message like "it is getting worse" can be resolved
@@ -42,11 +46,11 @@ class FarmerContext:
     language: Optional[str] = None
     location: Optional[str] = None
     crop: Optional[str] = None
+    disease: Optional[str] = None
     growth_stage: Optional[str] = None
     previous_case: Optional[str] = None
     input_type: Optional[str] = None
     intent: Optional[str] = None
-
 
     def to_dict(self) -> dict[str, Any]:
         """Return the context as a plain, JSON-serializable dict."""
