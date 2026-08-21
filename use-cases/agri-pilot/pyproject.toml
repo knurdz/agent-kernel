@@ -5,7 +5,7 @@ description = "Agentic AI agricultural assistant for smallholder farmers"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph,multimodal]>=0.8.1",
+    "agentkernel[cli,langgraph,multimodal,chromadb]>=0.8.1",
     # Pinned: langgraph-prebuilt>=1.0.6 imports ExecutionInfo/ServerInfo
     # from langgraph.runtime, which langgraph 1.0.10 does not provide.
     "fastapi>=0.141.1",
