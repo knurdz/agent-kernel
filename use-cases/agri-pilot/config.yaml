@@ -28,3 +28,7 @@ guardrail:
 
 test:
   mode: fuzzy
+
+whatsapp:
+  agent: triage
+  verify_token: "agripilot-local-verify"

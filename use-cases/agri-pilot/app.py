@@ -1,16 +1,22 @@
-"""Minimal API entry point for AgriPilot.
+"""API entry point for AgriPilot (Phase 8+).
 
-This currently exposes only a health check for container orchestration.
-The full HTTP API (chat endpoint, webhook, etc.) is built out from Phase 12
-onward; this file exists early so Docker has something stable to run and
-health-check against.
+Runs the agent behind an Agent Kernel REST server with WhatsApp Cloud API
+webhook support. Requires AK_WHATSAPP__ACCESS_TOKEN, AK_WHATSAPP__PHONE_NUMBER_ID
+and AK_WHATSAPP__VERIFY_TOKEN to be set; startup fails fast otherwise.
 """
 
-from fastapi import FastAPI
+from dotenv import load_dotenv
 
-app = FastAPI(title="AgriPilot")
+load_dotenv(".env.local")
+
+from agentkernel.api import RESTAPI
+from agentkernel.langgraph import LangGraphModule
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+
+from agents.supervisor import triage_agent
+
+LangGraphModule([triage_agent])
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+if __name__ == "__main__":
+    RESTAPI.run([AgentWhatsAppRequestHandler()])
