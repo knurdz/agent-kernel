@@ -35,16 +35,19 @@ from langchain_core.tools import BaseTool
 from langgraph_supervisor.handoff import create_handoff_tool
 
 # Phrases that describe taking an action ("I'll check", "escalated",
-# "please hold on") without a tool call attached. Matching this alone isn't
-# proof of a violation — that's decided by pairing it with "no tool_calls"
-# in `build_narrated_delegation_guard` — but it's a good-enough signal that
-# a reply is narrating rather than answering.
+# "transferred your request") without a tool call attached. Matching this
+# alone isn't proof of a violation — that's decided by pairing it with "no
+# tool_calls" in `build_narrated_delegation_guard` — but it's a good-enough
+# signal that a reply is narrating rather than answering.
 _PROMISE_WITHOUT_ACTION_PATTERN = re.compile(
     r"\b("
     r"hold on|please wait|"
     r"let me (?:check|get|retrieve|look|confirm)|"
     r"i(?:'|’)?ll (?:get|check|retrieve|look)|"
     r"i have escalated|escalat(?:ed|ing) (?:this|your)|"
+    r"(?:initiated?|made)?\s*transfer(?:red|ring)?(?:\s+\w+){0,3}|"
+    r"handed? (?:this|your|it)(?: \w+)? to|handing? (?:this|your|it)(?: \w+)? to|"
+    r"forwarded (?:this|your)|pass(?:ed|ing) (?:this|your) (?:request|question) (?:to|on)|"
     r"checking with|"
     r"retrieving the (?:best|latest)|"
     r"i am (?:checking|retrieving)"
@@ -54,11 +57,12 @@ _PROMISE_WITHOUT_ACTION_PATTERN = re.compile(
 
 _CORRECTION_MESSAGE = SystemMessage(
     content=(
-        "Your previous reply described checking, escalating, or retrieving "
-        "information on the farmer's behalf, but you did not call any tool "
-        "or specialist agent. This is not allowed: either call the "
-        "appropriate specialist agent right now, or answer the farmer "
-        "directly without claiming to take an action you have not taken."
+        "Your previous reply described checking, escalating, transferring, "
+        "or retrieving information on the farmer's behalf, but you did not "
+        "call any tool or specialist agent. This is not allowed: either "
+        "call the appropriate specialist agent right now, or answer the "
+        "farmer directly without claiming to take an action you have not "
+        "taken."
     )
 )
 
@@ -69,9 +73,7 @@ def _message_text(message: AIMessage) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return " ".join(
-            block.get("text", "") for block in content if isinstance(block, dict)
-        )
+        return " ".join(block.get("text", "") for block in content if isinstance(block, dict))
     return str(content)
 
 

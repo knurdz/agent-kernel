@@ -10,6 +10,7 @@ from agentkernel.langgraph import LangGraphToolBuilder
 from langgraph_supervisor import create_supervisor
 
 from agents.knowledge_agent import knowledge_agent
+from agents.market_agent import market_agent
 from agents.model import get_chat_model
 from agents.resource_agent import resource_agent
 from agents.supervisor_guardrails import build_narrated_delegation_guard
@@ -27,7 +28,7 @@ tools = LangGraphToolBuilder.bind([get_farmer_context, update_farmer_context])
 narrated_delegation_guard = build_narrated_delegation_guard(
     model=get_chat_model(),
     extra_tools=tools,
-    agent_names=["vision", "knowledge", "resource"],
+    agent_names=["vision", "knowledge", "resource", "market"],
 )
 
 TRIAGE_INSTRUCTIONS = """
@@ -78,9 +79,10 @@ and check whether you already have it before asking or delegating.
   nutrient deficiency, or soil treatment dosages, delegate to the
   `knowledge` agent instead — chemical and dosage recommendations are
   only ever given by that specialist after safety validation.
-- For MARKET intents, no specialist exists yet (it arrives in a later
-  phase). Answer directly, but say plainly that market prices are coming
-  soon. GENERAL and SYSTEM intents: answer directly.
+- If the intent is MARKET (price query, selling recommendation, buyer or
+  market comparison), delegate to the `market` agent. It ranks selling
+  options from live tool data; never quote a price yourself.
+- GENERAL and SYSTEM intents: answer directly.
 - For any other weather question you can answer without forecast data,
   do so directly; anything needing actual conditions goes to `resource`.
 
@@ -110,7 +112,8 @@ you describe in prose.
 
 ## Step 4: Relay the specialist's answer
 
-When a specialist agent (`vision`, `knowledge`, `resource`) returns a
+When a specialist agent (`vision`, `knowledge`, `resource`, `market`)
+returns a
 response, your
 final reply to the farmer must contain that response's actual content —
 the diagnosis, treatment steps, etc. Never reply with a meta-summary like
@@ -123,7 +126,7 @@ and never add chemical names or dosages of your own.
 
 triage_agent = create_supervisor(
     model=model,
-    agents=[vision_agent, knowledge_agent, resource_agent],
+    agents=[vision_agent, knowledge_agent, resource_agent, market_agent],
     tools=tools,
     prompt=TRIAGE_INSTRUCTIONS,
     post_model_hook=narrated_delegation_guard,

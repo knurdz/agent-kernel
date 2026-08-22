@@ -143,6 +143,26 @@ def test_case_insensitive_and_alternate_phrasing_is_caught():
     assert result["messages"][1] is retry_response
 
 
+def test_transfer_narration_is_caught():
+    """Regression: 'transferred/initiated a transfer' phrasing (seen live on
+    the market path) must trigger the correction retry like escalation does."""
+    retry_response = AIMessage(
+        content="",
+        tool_calls=[{"name": "transfer_to_market", "args": {}, "id": "call_3"}],
+    )
+    guard, model = _make_guard(retry_response)
+
+    for bad_text in (
+        "I did initiate a transfer to the market specialist for your request.",
+        "I’ve now transferred your request to the market specialist. " "They’ll provide you with up-to-date prices.",
+    ):
+        state = {"messages": [HumanMessage(content="Where should I sell my onions?"), AIMessage(content=bad_text)]}
+        result = guard(state)
+        assert len(model.invoke_calls) == 2 or model.invoke_calls, f"not caught: {bad_text!r}"
+        assert result["messages"][1] is retry_response
+        model.invoke_calls.clear()
+
+
 def test_handoff_and_extra_tools_are_bound_for_the_retry_model():
     """The retry call must have the same delegation power as the supervisor."""
     guard, model = _make_guard(AIMessage(content="ok"))
@@ -150,9 +170,7 @@ def test_handoff_and_extra_tools_are_bound_for_the_retry_model():
     bad_reply = AIMessage(content="Let me check on that for you.")
     guard({"messages": [HumanMessage(content="hi"), bad_reply]})
 
-    bound_names = {
-        getattr(t, "name", t) for t in model.bound_tools
-    }
+    bound_names = {getattr(t, "name", t) for t in model.bound_tools}
     assert "transfer_to_vision" in bound_names
     assert "transfer_to_knowledge" in bound_names
     assert "fake_get_farmer_context" in bound_names

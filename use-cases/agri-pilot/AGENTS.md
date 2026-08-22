@@ -10,8 +10,9 @@ Guidance for AI coding agents working on the AgriPilot use-case (`use-cases/agri
   contributors, not this project.
 - The canonical build plan lives in `plan/`: read `plan/00-main.md` first, then only the
   file for the phase you are working on. Mark tasks `[x]` only after their test passes;
-  mark blocked items `(blocked: reason)`. Phases 0–3 are complete; Phase 4 (safety &
-  guardrails) is in progress.
+  mark blocked items `(blocked: reason)`. Phases 0–5 are complete; Phase 6 (Market Agent)
+  is in progress. Two leftover unticked items are known: a Phase 12-blocked real-photo
+  check and `slow` live-LLM runs awaiting real API credits — don't "fix" them by ticking.
 - `README.md` is stale (references nonexistent files and old status). Trust `plan/`.
 - The workflow follows the bundled skills in `.claude/commands/` (`ak-init`, `ak-build`,
   `ak-add-capabilities`, `ak-add-integration`, `ak-test`, `ak-cloud-deploy`).
@@ -25,29 +26,33 @@ name clashes between examples.
 ```bash
 ./build.sh                      # setup: uv venv && uv sync
 uv run pytest                   # all tests
-uv run pytest -m "not slow"     # skip model-weight-download / real-LLM tests
+uv run pytest -m "not slow"     # skip weight-download / live-LLM tests (default for iteration)
 OPENAI_API_KEY=sk-dummy uv run pytest   # dummy key is enough for unit tests
 python demo.py                  # CLI entry point
 uv run python scripts/ingest_knowledge.py   # rebuild ChromaDB after editing data/knowledge_docs/
 ```
 
-- Tests need `OPENAI_API_KEY` or `GEMINI_API_KEY` set (a dummy value works): importing
-  `demo` registers agents and `agents/model.py` raises at import time otherwise.
-- pytest config is in `pyproject.toml` (`pythonpath = ["."]`, registered `slow` marker);
-  use the project venv's pytest — there is no system-wide one.
+- Tests need `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY` set (a dummy
+  value works): importing `demo` registers agents and `agents/model.py` raises at import
+  time otherwise.
+- Single file/test: `uv run pytest tests/market_tool_test.py::<test_name>` (pytest config
+  lives in `pyproject.toml`: `pythonpath = ["."]`, registered `slow` marker). Use the
+  project venv's pytest — there is no system-wide one.
 
 ## Environment & configuration
 
 - `demo.py` calls `load_dotenv(".env.local")` **before** importing agentkernel/agents —
   keep that import order when touching entrypoints. Copy `.env.local.example` to
   `.env.local` for keys.
+- Provider precedence when several keys are set: OpenAI, then Gemini, then OpenRouter,
+  unless `AGRIPILOT_MODEL_PROVIDER=openai|gemini|openrouter` forces one. Per-provider
+  model overrides: `AGRIPILOT_OPENAI_MODEL`, `AGRIPILOT_GEMINI_MODEL`,
+  `AGRIPILOT_OPENROUTER_MODEL` (default `openrouter/free`; see `agents/model.py`).
 - `AKConfig` reads `config.yaml` from the CWD at first access (lazy singleton).
 - Any config value can be overridden by env vars with prefix `AK_` and `__` nesting;
   they take priority over `config.yaml`. E.g. set
   `AK_GUARDRAIL__INPUT__ENABLED=false` / `AK_GUARDRAIL__OUTPUT__ENABLED=false` to turn
   guardrails off with zero API cost while testing.
-- Provider/model selection env vars: `AGRIPILOT_MODEL_PROVIDER`, `AGRIPILOT_OPENAI_MODEL`,
-  `AGRIPILOT_GEMINI_MODEL` (see `agents/model.py`; OpenAI preferred if both keys set).
 
 ## OpenAI guardrails schema gotcha
 
@@ -69,18 +74,28 @@ match the `openai-guardrails` `PipelineBundles` schema:
 
 ## Dependency boundary
 
-`agentkernel[...]` is installed into `.venv` from PyPI (pinned in `pyproject.toml` /
-`uv.lock`) — it is **not** an editable link to `../../ak-py/src`. Editing Agent Kernel
-core source has no effect on this project; upgrade via `uv lock && uv sync`.
+- `agentkernel[...]` is installed into `.venv` from PyPI (pinned in `pyproject.toml` /
+  `uv.lock`) — it is **not** an editable link to `../../ak-py/src`. Editing Agent Kernel
+  core source has no effect on this project; upgrade via `uv lock && uv sync`.
+- `langgraph-prebuilt` is pinned to exactly `1.0.5`: `>=1.0.6` imports
+  `ExecutionInfo`/`ServerInfo` from `langgraph.runtime`, which `langgraph` 1.0.10 does
+  not provide. Don't bump it without checking that import path still resolves.
 
 ## Codebase map
 
 - `demo.py` — CLI entry point; registers `LangGraphModule([triage_agent])`.
 - `app.py` — FastAPI entry point, health check only until Phase 12.
-- `agents/supervisor.py` — LangGraph supervisor routing to specialist agents
-  (`vision_agent`, `knowledge_agent`); `agents/supervisor_guardrails.py` adds a
-  `post_model_hook` backstop against narrated-but-not-executed handoffs.
-- `tools/` — agent tools (vision, knowledge RAG, farmer context, safety validation).
+- `agents/supervisor.py` — langgraph_supervisor triage agent routing to four specialists:
+  `vision_agent`, `knowledge_agent`, `resource_agent`, `market_agent`. Triage rules live
+  in its `TRIAGE_INSTRUCTIONS` prompt, including vision→knowledge chaining within one turn.
+- Two code-level backstops wrap the LLM prompts (prompts alone can't guarantee safety):
+  - `agents/supervisor_guardrails.py` — `post_model_hook` on the supervisor against
+    narrated-but-not-executed handoffs.
+  - `agents/knowledge_guardrails.py` — `post_model_hook` on the knowledge agent: a final
+    reply naming a chemical + dosage without an `allow` verdict from `validate_treatment`
+    triggers one corrective re-invocation (fail-closed, single retry, not a loop).
+- `tools/` — agent tools: vision, knowledge RAG, weather, market, farmer context, safety
+  validation (`validate_treatment` against `data/safety_rules.json`).
 - `state/farmer_context.py` — per-session farmer state tool.
 - `data/` — knowledge docs (header + `===` + body format), `safety_rules.json`,
   `data/chroma_db/` (generated; rebuild via `scripts/ingest_knowledge.py`).
