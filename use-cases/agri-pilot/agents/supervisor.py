@@ -11,6 +11,7 @@ from langgraph_supervisor import create_supervisor
 
 from agents.knowledge_agent import knowledge_agent
 from agents.model import get_chat_model
+from agents.resource_agent import resource_agent
 from agents.supervisor_guardrails import build_narrated_delegation_guard
 from agents.vision_agent import vision_agent
 from tools.context_tools import get_farmer_context, update_farmer_context
@@ -26,7 +27,7 @@ tools = LangGraphToolBuilder.bind([get_farmer_context, update_farmer_context])
 narrated_delegation_guard = build_narrated_delegation_guard(
     model=get_chat_model(),
     extra_tools=tools,
-    agent_names=["vision", "knowledge"],
+    agent_names=["vision", "knowledge", "resource"],
 )
 
 TRIAGE_INSTRUCTIONS = """
@@ -67,10 +68,21 @@ and check whether you already have it before asking or delegating.
   next so the farmer gets one combined reply with the diagnosis AND a
   full treatment recommendation, not just a disease name. Do not reply
   in between the two handoffs.
-- For all other intents, no specialist exists yet (they arrive in later
-  phases). Answer directly, but say plainly if the request needs a
-  capability you don't have yet (weather, market), and that it is coming
-  soon.
+- If the intent is RESOURCES (irrigation, watering schedule) or WEATHER
+  (spray timing, weather risk), delegate to the `resource` agent. If
+  spray timing is asked about but no treatment or diagnosis is known
+  yet, first ask what the farmer plans to treat (or get a diagnosis)
+  rather than letting the `resource` agent judge a treatment that does
+  not exist.
+- If the intent is RESOURCES but the farmer asks about fertilizer,
+  nutrient deficiency, or soil treatment dosages, delegate to the
+  `knowledge` agent instead — chemical and dosage recommendations are
+  only ever given by that specialist after safety validation.
+- For MARKET intents, no specialist exists yet (it arrives in a later
+  phase). Answer directly, but say plainly that market prices are coming
+  soon. GENERAL and SYSTEM intents: answer directly.
+- For any other weather question you can answer without forecast data,
+  do so directly; anything needing actual conditions goes to `resource`.
 
 Never state a chemical name or dosage yourself, even if you know one:
 treatment recommendations only come from the `knowledge` agent, which
@@ -81,8 +93,9 @@ questions than necessary.
 
 ## Step 3a: Delegation is an action, never a narration
 
-"Delegate" means actually invoking the `vision` or `knowledge` agent as a
-handoff in this same turn — it is not something you describe in prose.
+"Delegate" means actually invoking the `vision`, `knowledge`, or
+`resource` agent as a handoff in this same turn — it is not something
+you describe in prose.
 
 - Never write a reply that claims or implies delegation has happened, is
   happening, or will happen ("I have escalated this...", "Please hold
@@ -97,7 +110,8 @@ handoff in this same turn — it is not something you describe in prose.
 
 ## Step 4: Relay the specialist's answer
 
-When a specialist agent (`vision`, `knowledge`) returns a response, your
+When a specialist agent (`vision`, `knowledge`, `resource`) returns a
+response, your
 final reply to the farmer must contain that response's actual content —
 the diagnosis, treatment steps, etc. Never reply with a meta-summary like
 "I have provided the steps" or "I have shared the information above"
@@ -109,7 +123,7 @@ and never add chemical names or dosages of your own.
 
 triage_agent = create_supervisor(
     model=model,
-    agents=[vision_agent, knowledge_agent],
+    agents=[vision_agent, knowledge_agent, resource_agent],
     tools=tools,
     prompt=TRIAGE_INSTRUCTIONS,
     post_model_hook=narrated_delegation_guard,
