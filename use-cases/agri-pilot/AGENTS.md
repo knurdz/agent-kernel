@@ -8,14 +8,18 @@ Guidance for AI coding agents working on the AgriPilot use-case (`use-cases/agri
   (`ak-py/`, `examples/`, `e2e/`, `ak-deployment/`, root docs) is out of scope for this
   project; do not analyze or edit it. The root `/AGENTS.md` targets Agent Kernel core
   contributors, not this project.
+- **Always consider the ak- skills** under `.agents/skills/` (mirrored in
+  `.claude/commands/`) whenever the user asks for anything: load the matching skill
+  (`ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-test`,
+  `ak-cloud-deploy`, `ak-init`) before improvising wiring or workflow steps.
 - The canonical build plan lives in `plan/`: read `plan/00-main.md` first, then only the
   file for the phase you are working on. Mark tasks `[x]` only after their test passes;
-  mark blocked items `(blocked: reason)`. Phases 0–5 are complete; Phase 6 (Market Agent)
-  is in progress. Two leftover unticked items are known: a Phase 12-blocked real-photo
-  check and `slow` live-LLM runs awaiting real API credits — don't "fix" them by ticking.
+  mark blocked items `(blocked: reason)`. Phases 0–6 and 9 are complete; open phases:
+  7 (durable memory), 8 (WhatsApp — blocked awaiting Meta test credentials), and
+  11–13 (Phase 10 was merged into Phase 12). Two leftover unticked items are known: a
+  Phase 12-blocked real-photo check and `slow` live-LLM runs awaiting real API credits —
+  don't "fix" them by ticking.
 - `README.md` is stale (references nonexistent files and old status). Trust `plan/`.
-- The workflow follows the bundled skills in `.claude/commands/` (`ak-init`, `ak-build`,
-  `ak-add-capabilities`, `ak-add-integration`, `ak-test`, `ak-cloud-deploy`).
 
 ## Commands
 
@@ -89,13 +93,25 @@ match the `openai-guardrails` `PipelineBundles` schema:
   `vision_agent`, `knowledge_agent`, `resource_agent`, `market_agent`. Triage rules live
   in its `TRIAGE_INSTRUCTIONS` prompt, including vision→knowledge chaining within one turn.
 - Two code-level backstops wrap the LLM prompts (prompts alone can't guarantee safety):
-  - `agents/supervisor_guardrails.py` — `post_model_hook` on the supervisor against
-    narrated-but-not-executed handoffs.
+  - `agents/supervisor_guardrails.py` — combined `post_model_hook` on the supervisor:
+    handoff-loop detection (Increment 7.4) plus narrated-action correction via an
+    LLM judge (`build_narration_judge`, meaning-based, any language — replaced an
+    earlier phrase regex). Judge model is provider-flexible via
+    `AGRIPILOT_JUDGE_PROVIDER` / `AGRIPILOT_JUDGE_MODEL`; judge failures fail open.
   - `agents/knowledge_guardrails.py` — `post_model_hook` on the knowledge agent: a final
     reply naming a chemical + dosage without an `allow` verdict from `validate_treatment`
     triggers one corrective re-invocation (fail-closed, single retry, not a loop).
 - `tools/` — agent tools: vision, knowledge RAG, weather, market, farmer context, safety
-  validation (`validate_treatment` against `data/safety_rules.json`).
+  validation (`validate_treatment` against `data/safety_rules.json`). Also:
+  - `tools/tool_guard.py` — every data-fetching tool is wrapped in `guarded`: per-session
+    call limits (`AGRIPILOT_TOOL_MAX_CALLS`, default 8) and timeouts
+    (`AGRIPILOT_TOOL_TIMEOUT_SECONDS`, default 180 s). Debug switches:
+    `AGRIPILOT_DEBUG_FORCE_TOOL_FAILURE=<tool names>`,
+    `AGRIPILOT_DEBUG_TOOL_DELAY_SECONDS=<float>` for repeatable failure/latency tests.
+  - `tools/plan_tools.py` + `state/plan.py` — session-scoped multi-step plan so the
+    supervisor can resume interrupted flows; supervisor registers these tools.
+  - `tools/attachment_tool.py` — resolves multimodal attachment IDs to local paths
+    (used by the vision agent).
 - `state/farmer_context.py` — per-session farmer state tool.
 - `data/` — knowledge docs (header + `===` + body format), `safety_rules.json`,
   `data/chroma_db/` (generated; rebuild via `scripts/ingest_knowledge.py`).

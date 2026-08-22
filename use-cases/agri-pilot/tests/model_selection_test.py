@@ -15,10 +15,14 @@ from agents.model import (
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
+    # OPENROUTER_API_KEY must be cleared too: slow-marked e2e modules do
+    # `import demo` at collection time, and demo's load_dotenv(".env.local")
+    # leaks real key values into os.environ for everything collected after.
     for var in (
         "AGRIPILOT_MODEL_PROVIDER",
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
         "AGRIPILOT_OPENROUTER_MODEL",
     ):
         monkeypatch.delenv(var, raising=False)

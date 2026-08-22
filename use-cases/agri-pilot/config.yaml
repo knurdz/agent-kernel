@@ -11,8 +11,9 @@ logging:
 multimodal:
   enabled: true
   max_attachments: 5
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  # LiteLLM model strings (called directly, not via langchain)
+  description_model: "gemini/gemini-3.1-flash-lite"
+  analysis_model: "gemini/gemini-3.1-flash-lite"
 
 guardrail:
   input:

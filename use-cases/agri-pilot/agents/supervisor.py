@@ -11,9 +11,9 @@ from langgraph_supervisor import create_supervisor
 
 from agents.knowledge_agent import knowledge_agent
 from agents.market_agent import market_agent
-from agents.model import get_chat_model
+from agents.model import get_chat_model, get_judge_model
 from agents.resource_agent import resource_agent
-from agents.supervisor_guardrails import build_supervisor_post_model_hook
+from agents.supervisor_guardrails import build_narration_judge, build_supervisor_post_model_hook
 from agents.vision_agent import vision_agent
 from tools.context_tools import get_farmer_context, update_farmer_context
 from tools.plan_tools import (
@@ -40,12 +40,14 @@ tools = LangGraphToolBuilder.bind(
 # agents/supervisor_guardrails.py). One combined post-model hook performs:
 # 1. loop detection — a specialist handed off to too many times in one run
 #    forces a limitation reply instead of another identical handoff;
-# 2. narrated-delegation correction — a final reply that only claims to
-#    have delegated triggers one corrective re-invocation.
+# 2. narrated-delegation correction — an LLM judge (meaning-based, any
+#    language) flags a final reply that only claims to have delegated or
+#    delivered, triggering one corrective re-invocation.
 supervisor_post_model_hook = build_supervisor_post_model_hook(
     model=get_chat_model(),
     extra_tools=tools,
     agent_names=["vision", "knowledge", "resource", "market"],
+    judge=build_narration_judge(get_judge_model()),
 )
 
 TRIAGE_INSTRUCTIONS = """

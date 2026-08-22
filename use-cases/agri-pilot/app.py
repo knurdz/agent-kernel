@@ -11,12 +11,12 @@ load_dotenv(".env.local")
 
 from agentkernel.api import RESTAPI
 from agentkernel.langgraph import LangGraphModule
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 from agents.supervisor import triage_agent
+from whatsapp_handler import FastAckWhatsAppHandler
 
 LangGraphModule([triage_agent])
 
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentWhatsAppRequestHandler()])
+    RESTAPI.run([FastAckWhatsAppHandler()])
