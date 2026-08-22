@@ -7,10 +7,13 @@ agent never wastes a model call, or a diagnosis, on an unusable photo.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import numpy as np
 from PIL import Image
+
+from tools.tool_guard import guarded
 
 BLUR_VARIANCE_THRESHOLD = 100.0
 DARKNESS_MEAN_THRESHOLD = 40.0
@@ -26,16 +29,11 @@ _model = None
 def _laplacian_variance(gray: np.ndarray) -> float:
     """Approximate a Laplacian sharpness score (no OpenCV dependency)."""
     padded = np.pad(gray, 1, mode="edge")
-    conv = (
-        padded[:-2, 1:-1]
-        + padded[1:-1, :-2]
-        - 4 * padded[1:-1, 1:-1]
-        + padded[1:-1, 2:]
-        + padded[2:, 1:-1]
-    )
+    conv = padded[:-2, 1:-1] + padded[1:-1, :-2] - 4 * padded[1:-1, 1:-1] + padded[1:-1, 2:] + padded[2:, 1:-1]
     return float(conv.var())
 
 
+@guarded
 def check_image_quality(image_path: str) -> dict[str, Any]:
     """Check whether a farmer-submitted crop image is usable for diagnosis.
 
@@ -46,6 +44,17 @@ def check_image_quality(image_path: str) -> dict[str, Any]:
     :return: dict with "ok" (bool), "reason" (str, only set when not ok),
         and "metrics" (raw sharpness/brightness/green_ratio values).
     """
+    # Increment 7.2 manual-testing hook: force the gate to fail so the
+    # replanning flow is reachable from the text-only CLI.
+    forced = os.environ.get("AGRIPILOT_DEBUG_IMAGE_QUALITY_FAIL", "").strip().lower()
+    if forced:
+        forced_reasons = {
+            "blurry": "Image is too blurry to see leaf detail clearly.",
+            "dark": "Image is too dark to see the affected area clearly.",
+            "no_plant": "No plant leaves are clearly visible in this image.",
+        }
+        if forced in forced_reasons:
+            return {"ok": False, "reason": forced_reasons[forced], "metrics": {}}
     try:
         image = Image.open(image_path).convert("RGB")
     except Exception as exc:  # noqa: BLE001 - any load failure means poor quality
@@ -84,6 +93,7 @@ def _load_model():
     return _processor, _model
 
 
+@guarded
 def diagnose_crop_image(image_path: str) -> dict[str, Any]:
     """Classify a crop leaf image and return the top three disease predictions.
 

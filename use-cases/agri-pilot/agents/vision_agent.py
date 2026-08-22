@@ -27,7 +27,10 @@ from a farmer's photo of an affected leaf or plant.
 Call check_image_quality on the attachment first. If ok is false, do not
 diagnose. Ask the farmer for a better photo, in plain language (e.g. "I
 cannot clearly see the affected area. Please send a closer photo of the
-leaves in good lighting.").
+leaves in good lighting."). Report the quality-gate outcome and reason
+clearly so the supervisor can record where the flow paused — never
+pretend a diagnosis happened when it did not. If a tool result contains
+"limited": true, relay its message plainly and stop instead of retrying.
 
 ## Step 2: Classify
 

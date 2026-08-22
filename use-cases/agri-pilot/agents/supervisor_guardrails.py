@@ -26,6 +26,8 @@ looping forever.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from typing import Any
 
@@ -33,6 +35,24 @@ from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph_supervisor.handoff import create_handoff_tool
+
+log = logging.getLogger("agripilot.supervisor_guardrails")
+
+# Increment 7.4: how many times one specialist may be handed off to within
+# a single supervisor run before routing is declared a loop.
+DEFAULT_HANDOFF_LIMIT = int(os.environ.get("AGRIPILOT_HANDOFF_LIMIT", "3"))
+
+# langgraph_supervisor names its handoff tools transfer_to_<agent>.
+_HANDOFF_TOOL_PATTERN = re.compile(r"^transfer_to_(.+)$")
+
+LOOP_CORRECTION_MESSAGE_TEMPLATE = (
+    "You have delegated to the '{agent}' specialist {count} times in this "
+    "turn without completing the request. This is a routing loop: do NOT "
+    "delegate again. Give the farmer a clear, honest final reply now — say "
+    "what you could not complete and why, and suggest what they can do next."
+)
+
+_loop_retry_model: LanguageModelLike | None = None
 
 # Phrases that describe taking an action ("I'll check", "escalated",
 # "transferred your request") without a tool call attached. Matching this
@@ -75,6 +95,76 @@ def _message_text(message: AIMessage) -> str:
     if isinstance(content, list):
         return " ".join(block.get("text", "") for block in content if isinstance(block, dict))
     return str(content)
+
+
+def _handoff_counts(messages: list) -> dict[str, int]:
+    """Count handoff tool calls per specialist in the CURRENT turn only.
+
+    The Agent Kernel session replays earlier turns into the message list,
+    so counting the whole history would flag legitimate re-delegations on
+    later farmer messages as loops. Only AIMessages after the most recent
+    HumanMessage (i.e. this turn's supervisor steps) are counted.
+    """
+    current_turn_start = 0
+    for index, message in enumerate(messages):
+        if type(message).__name__ == "HumanMessage":
+            current_turn_start = index + 1
+    counts: dict[str, int] = {}
+    for message in messages[current_turn_start:]:
+        if not isinstance(message, AIMessage):
+            continue
+        for tool_call in message.tool_calls or []:
+            match = _HANDOFF_TOOL_PATTERN.match(tool_call.get("name", ""))
+            if match:
+                agent = match.group(1)
+                counts[agent] = counts.get(agent, 0) + 1
+    return counts
+
+
+def build_supervisor_post_model_hook(
+    model: LanguageModelLike,
+    extra_tools: list[BaseTool | Any],
+    agent_names: list[str],
+):
+    """Build the combined `post_model_hook` for the triage supervisor.
+
+    Runs two checks after every supervisor LLM turn, in order:
+
+    1. Loop detection (Increment 7.4): if one specialist has been handed
+       off to `DEFAULT_HANDOFF_LIMIT` times or more within this run, the
+       supervisor is re-invoked once with a plain-tools-only model (no
+       handoff tools, so it physically cannot delegate again) and an
+       instruction to give a clear limitation reply instead.
+    2. Narrated-delegation correction (see `build_narrated_delegation_guard`).
+
+    :param model: The same (unbound) chat model the supervisor uses.
+    :param extra_tools: The supervisor's own non-handoff tools.
+    :param agent_names: Names of the specialist agents the supervisor can
+        hand off to.
+    :return: A callable suitable for `create_supervisor(post_model_hook=...)`.
+    """
+    narrated_delegation_guard = build_narrated_delegation_guard(
+        model=model, extra_tools=extra_tools, agent_names=agent_names
+    )
+
+    global _loop_retry_model
+    if _loop_retry_model is None:
+        # Deliberately WITHOUT handoff tools: the loop-correction reply can
+        # use plain tools but cannot start another delegation.
+        _loop_retry_model = model.bind_tools(list(extra_tools))
+
+    def combined_hook(state: dict) -> dict:
+        messages = state.get("messages") or []
+        counts = _handoff_counts(messages)
+        for agent, count in counts.items():
+            if count >= DEFAULT_HANDOFF_LIMIT:
+                log.warning("handoff loop detected: %s delegated %d times", agent, count)
+                correction = SystemMessage(content=LOOP_CORRECTION_MESSAGE_TEMPLATE.format(agent=agent, count=count))
+                response = _loop_retry_model.invoke(messages + [correction])
+                return {"messages": [correction, response]}
+        return narrated_delegation_guard(state)
+
+    return combined_hook
 
 
 def build_narrated_delegation_guard(

@@ -40,6 +40,11 @@ Call get_forecast with the farmer's location.
   Do NOT guess temperatures, rain chances, or any other condition.
 - If `cached` is true: say plainly that your advice is based on data from
   earlier (`as_of`), e.g. "based on data from earlier today", then use it.
+- If `conflict.detected` is true, the readings disagree with an earlier
+  fetch. Do NOT pick either set of values and do not advise from them:
+  relay `conflict.message` to the farmer (sources disagree) and stop.
+- If a tool result contains "limited": true, relay its `message` plainly
+  and stop — the check hit its retry limit or timed out.
 
 ## Irrigation questions ("Should I water today?")
 

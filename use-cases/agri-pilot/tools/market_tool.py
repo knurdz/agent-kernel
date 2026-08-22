@@ -44,6 +44,8 @@ import random
 from datetime import datetime
 from typing import Any, Callable, Optional
 
+from tools.tool_guard import guarded
+
 STALE_AFTER_HOURS = 24
 
 # Wholesale markets the mock knows about. The farmer's location is recorded
@@ -131,6 +133,7 @@ def _validate_quantity(quantity_kg: Any) -> float:
     return float(quantity_kg)
 
 
+@guarded
 def get_price(crop: str, location: str = "", quantity_kg: Optional[float] = None) -> dict[str, Any]:
     """Return current wholesale price options for a crop.
 

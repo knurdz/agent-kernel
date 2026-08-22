@@ -13,19 +13,36 @@ from agents.knowledge_agent import knowledge_agent
 from agents.market_agent import market_agent
 from agents.model import get_chat_model
 from agents.resource_agent import resource_agent
-from agents.supervisor_guardrails import build_narrated_delegation_guard
+from agents.supervisor_guardrails import build_supervisor_post_model_hook
 from agents.vision_agent import vision_agent
 from tools.context_tools import get_farmer_context, update_farmer_context
+from tools.plan_tools import (
+    clear_active_plan_tool,
+    get_active_plan,
+    mark_plan_step,
+    set_active_plan,
+)
 
 model = get_chat_model()
 
-tools = LangGraphToolBuilder.bind([get_farmer_context, update_farmer_context])
+tools = LangGraphToolBuilder.bind(
+    [
+        get_farmer_context,
+        update_farmer_context,
+        get_active_plan,
+        set_active_plan,
+        mark_plan_step,
+        clear_active_plan_tool,
+    ]
+)
 
-# Code-level backstop for the "delegation is an action, not a narration"
-# rule in TRIAGE_INSTRUCTIONS below (see agents/supervisor_guardrails.py).
-# Catches the case where the supervisor LLM ignores that instruction and
-# writes a reply that only claims to have delegated.
-narrated_delegation_guard = build_narrated_delegation_guard(
+# Code-level backstops for the supervisor's routing rules (see
+# agents/supervisor_guardrails.py). One combined post-model hook performs:
+# 1. loop detection — a specialist handed off to too many times in one run
+#    forces a limitation reply instead of another identical handoff;
+# 2. narrated-delegation correction — a final reply that only claims to
+#    have delegated triggers one corrective re-invocation.
+supervisor_post_model_hook = build_supervisor_post_model_hook(
     model=get_chat_model(),
     extra_tools=tools,
     agent_names=["vision", "knowledge", "resource", "market"],
@@ -51,6 +68,25 @@ Call update_farmer_context with the classified `intent`.
 
 Call get_farmer_context first. Decide what you truly need for this intent
 and check whether you already have it before asking or delegating.
+
+## Step 2a: Check for an active plan (resume, do not restart)
+
+Call get_active_plan before handling any request that may continue
+earlier work — especially CROP_HEALTH after a rejected or unclear photo.
+
+- If a plan exists, RESUME it: continue from its next `pending` or
+  `awaiting_farmer` step. Do not re-ask questions the earlier steps of
+  the plan already covered, and do not rebuild the plan from scratch.
+- If the vision specialist reports an unusable image while a diagnosis is
+  pending, record the remaining flow with set_active_plan — goal "diagnose
+  crop problem and give treatment advice", steps like ["Get a clear
+  close-up photo of the affected leaves", "Diagnose the disease from the
+  photo", "Provide treatment advice"] with the first step marked
+  awaiting_farmer via mark_plan_step — then ask the farmer for the better
+  photo.
+- Mark steps done with mark_plan_step as they complete. When every step
+  is finished the plan clears itself; if the farmer switches to an
+  unrelated topic, discard the stale plan with clear_active_plan_tool.
 
 ## Step 3: Delegate or answer
 
@@ -85,6 +121,25 @@ and check whether you already have it before asking or delegating.
 - GENERAL and SYSTEM intents: answer directly.
 - For any other weather question you can answer without forecast data,
   do so directly; anything needing actual conditions goes to `resource`.
+
+## Step 3b: Multi-intent requests — delegate to independent specialists in one turn
+
+Some messages span several independent domains. Example: "My tomatoes are
+diseased. Should I treat them or harvest and sell them now?" combines
+CROP_HEALTH (diagnosis + treatment), MARKET (selling revenue) and often
+WEATHER (can the spray even be applied). For such requests:
+
+- Identify which specialist lookups are independent of each other (market
+  prices and spray conditions do not depend on each other; treatment info
+  may depend on a diagnosis).
+- Delegate to EVERY independent specialist in this same turn, one handoff
+  call each, rather than answering one part and asking the farmer to ask
+  again for the rest.
+- After all results are back, give ONE combined reply that weighs the
+  options against each other: e.g. treatment cost/effectiveness from
+  `knowledge` plus spray suitability from `resource` versus estimated
+  revenue from `market`. Recommend based only on tool data, and say what
+  each recommendation rests on.
 
 Never state a chemical name or dosage yourself, even if you know one:
 treatment recommendations only come from the `knowledge` agent, which
@@ -129,5 +184,5 @@ triage_agent = create_supervisor(
     agents=[vision_agent, knowledge_agent, resource_agent, market_agent],
     tools=tools,
     prompt=TRIAGE_INSTRUCTIONS,
-    post_model_hook=narrated_delegation_guard,
+    post_model_hook=supervisor_post_model_hook,
 ).compile(name="triage")

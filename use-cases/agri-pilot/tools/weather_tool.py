@@ -23,6 +23,7 @@ schema below is a contract — do not change it casually:
             ...  # one entry per requested day, starting today
         ],
         "message": None,              # farmer-facing limitation message on failure
+        "conflict": None,             # Increment 7.3: {"detected", "details", "message"}
     }
 
 On repeated fetch failure the tool never invents numbers: it falls back to
@@ -33,10 +34,13 @@ or reports `reliable=False` with a limitation `message` (Increment 5.4).
 from __future__ import annotations
 
 import hashlib
+import os
 import random
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional
+
+from tools.tool_guard import guarded
 
 FORECAST_DAYS_DEFAULT = 3
 RETRY_ATTEMPTS = 3
@@ -45,6 +49,25 @@ RETRY_BACKOFF_SECONDS = 0.5
 SPRAY_MAX_RAIN_PROBABILITY = 0.3
 SPRAY_MAX_RAIN_MM = 2.0
 SPRAY_MAX_WIND_KMH = 15.0
+
+# Increment 7.3: a fresh forecast "conflicts" with the previously cached
+# one for the same location when any overlapping field differs by more
+# than these tolerances (mock data is deterministic, so natural conflicts
+# only arise once live APIs land; AGRIPILOT_DEBUG_WEATHER_CONFLICT=1 can
+# force divergent readings to exercise the path manually).
+CONFLICT_TOLERANCES = {
+    "temp_min_c": 1.0,
+    "temp_max_c": 1.0,
+    "rain_probability": 0.10,
+    "rain_mm": 2.0,
+    "wind_kmh": 3.0,
+    "et0_mm": 1.0,
+}
+
+SOURCES_DISAGREE_MESSAGE = (
+    "Weather sources are giving conflicting readings for your area right "
+    "now, so I cannot advise reliably. Please ask again a little later."
+)
 
 NO_FORECAST_MESSAGE = (
     "I could not get a reliable weather forecast for your area right now, "
@@ -94,9 +117,53 @@ def _fetch_forecast(location: str, days: int) -> dict[str, list[dict[str, Any]]]
     """Fetch core, separated from retry/cache so tests can inject failures.
 
     Increment 11.1 replaces this body with a real API call returning the
-    same shape.
+    same shape. With AGRIPILOT_DEBUG_WEATHER_CONFLICT=1 the mock drifts
+    further apart on every call so repeated fetches disagree (Increment
+    7.3 manual testing).
     """
-    return _mock_forecast(location, days)
+    mock = _mock_forecast(location, days)
+    if os.environ.get("AGRIPILOT_DEBUG_WEATHER_CONFLICT") == "1":
+        global _conflict_call_count
+        _conflict_call_count += 1
+        drift = _conflict_call_count - 1
+        for day in mock["days"]:
+            day["temp_min_c"] = round(day["temp_min_c"] + 6.0 * drift, 1)
+            day["temp_max_c"] = round(day["temp_max_c"] + 6.0 * drift, 1)
+            day["rain_probability"] = round(min(1.0, day["rain_probability"] + 0.45 * drift), 2)
+            day["rain_mm"] = round(day["rain_mm"] + 10.0 * drift, 1)
+    return mock
+
+
+_conflict_call_count = 0
+
+
+@guarded
+def _detect_conflicts(previous_days: list[dict[str, Any]], current_days: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compare overlapping forecast days and report material disagreements.
+
+    Only fields with a tolerance in CONFLICT_TOLERANCES are compared; a
+    difference beyond the tolerance counts as one conflict detail.
+    """
+    previous_by_date = {day.get("date"): day for day in previous_days}
+    details: list[dict[str, Any]] = []
+    for day in current_days:
+        old_day = previous_by_date.get(day.get("date"))
+        if old_day is None:
+            continue
+        for field_name, tolerance in CONFLICT_TOLERANCES.items():
+            old_value = old_day.get(field_name)
+            new_value = day.get(field_name)
+            if isinstance(old_value, (int, float)) and isinstance(new_value, (int, float)):
+                if abs(new_value - old_value) > tolerance:
+                    details.append(
+                        {
+                            "date": day["date"],
+                            "field": field_name,
+                            "previous": old_value,
+                            "current": new_value,
+                        }
+                    )
+    return details
 
 
 def get_forecast(location: str, days: int = FORECAST_DAYS_DEFAULT) -> dict[str, Any]:
@@ -116,6 +183,12 @@ def get_forecast(location: str, days: int = FORECAST_DAYS_DEFAULT) -> dict[str, 
     for attempt in range(RETRY_ATTEMPTS):
         try:
             fetched = _fetch_forecast(key, days)
+            previous = _cache.get(key)
+            conflicts = (
+                _detect_conflicts(previous.get("days") or [], fetched["days"])
+                if previous and previous.get("reliable")
+                else []
+            )
             result: dict[str, Any] = {
                 "reliable": True,
                 "location": key,
@@ -123,6 +196,13 @@ def get_forecast(location: str, days: int = FORECAST_DAYS_DEFAULT) -> dict[str, 
                 "as_of": datetime.now().isoformat(timespec="seconds"),
                 **fetched,
                 "message": None,
+                # Increment 7.3: never silently pick between disagreeing
+                # readings — surface the conflict for the agent to relay.
+                "conflict": {
+                    "detected": bool(conflicts),
+                    "details": conflicts,
+                    "message": SOURCES_DISAGREE_MESSAGE if conflicts else None,
+                },
             }
             _cache[key] = result
             return result
@@ -142,10 +222,12 @@ def get_forecast(location: str, days: int = FORECAST_DAYS_DEFAULT) -> dict[str, 
         "as_of": None,
         "days": [],
         "message": NO_FORECAST_MESSAGE,
+        "conflict": {"detected": False, "details": [], "message": None},
         "_error": repr(last_error),
     }
 
 
+@guarded
 def assess_spray_conditions(location: str, days_ahead: int = 0) -> dict[str, Any]:
     """Judge whether conditions suit a planned spray treatment on a given day.
 

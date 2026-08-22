@@ -37,6 +37,8 @@ quantity as `quantity_kg` when known so each option carries an
 - If `reliable` is false: relay `message` plainly and stop. NEVER state a
   price that did not come from get_price — do not guess, estimate from
   memory, or substitute a different crop.
+- If a tool result contains "limited": true, relay its `message` plainly
+  and stop — the price check hit its retry limit or timed out.
 - Before citing any price, check `data_freshness`. If it is `"stale"`, do
   NOT quote the prices as current: say plainly that the latest data is
   from `as_of` (give the timestamp) and is not current.

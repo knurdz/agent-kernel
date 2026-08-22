@@ -16,12 +16,11 @@ from typing import Any, Optional
 
 from agentkernel.knowledgebase.chroma import ChromaManager
 
+from tools.tool_guard import guarded
+
 PERSIST_PATH = "data/chroma_db"
 COLLECTION_NAME = "agri_knowledge"
-NO_EVIDENCE_MESSAGE = (
-    "I do not have enough verified information to give you a safe "
-    "recommendation for this case."
-)
+NO_EVIDENCE_MESSAGE = "I do not have enough verified information to give you a safe " "recommendation for this case."
 
 _manager: Optional[ChromaManager] = None
 
@@ -82,6 +81,7 @@ def _query(
     return {"reliable": True, "evidence": evidence, "message": None}
 
 
+@guarded
 def retrieve_treatment_info(
     crop: str,
     disease: Optional[str] = None,
@@ -95,6 +95,8 @@ def retrieve_treatment_info(
     diagnosed (e.g. by the vision specialist) — do not guess a disease
     name. If no verified document matches, `reliable` is False and you
     must relay `message` to the farmer instead of inventing a treatment.
+    If a result contains "limited": true, relay its message and stop —
+    this check was attempted too many times or timed out.
 
     :param crop: Crop under discussion (e.g. "tomato").
     :param disease: Diagnosed disease name, if known (e.g. "early blight").
