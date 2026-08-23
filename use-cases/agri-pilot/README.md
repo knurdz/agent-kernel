@@ -43,6 +43,17 @@ uv run pytest -m "not slow"                    # skip weight-download / live-LLM
 uv run pytest tests/market_tool_test.py::<test_name>
 ```
 
+## Weather data
+
+Weather forecasts come from [Open-Meteo](https://open-meteo.com) — free for
+non-commercial use, **no API key or signup required** (10,000 requests/day,
+5,000/hour, 600/minute). Place names are resolved via Open-Meteo's geocoding
+endpoint and cached for the process lifetime; forecasts are re-served from a
+short-TTL cache (`AGRIPILOT_WEATHER_CACHE_TTL_MINUTES`, default 60) to stay
+well inside the free-tier limits. On API failure the agent relays an honest
+limitation message instead of guessing conditions. Weather data by
+Open-Meteo.com. See `plan/Open-Meteo.md` for the integration reference.
+
 ## Knowledge base
 
 After editing files in `data/knowledge_docs/`, rebuild ChromaDB:

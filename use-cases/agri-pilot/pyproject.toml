@@ -11,6 +11,10 @@ dependencies = [
     # Pinned: langgraph-prebuilt>=1.0.6 imports ExecutionInfo/ServerInfo
     # from langgraph.runtime, which langgraph 1.0.10 does not provide.
     "fastapi>=0.141.1",
+    # Direct HTTP client for the Open-Meteo weather integration
+    # (Increment 11.1); already present transitively, declared for the
+    # direct import in tools/weather_tool.py.
+    "httpx>=0.27",
     "langchain-google-genai>=4.3.4",
     "langgraph-prebuilt==1.0.5",
     "langgraph-supervisor>=0.0.20",
