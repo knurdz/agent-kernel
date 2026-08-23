@@ -7,7 +7,7 @@ current.
 """
 
 from agentkernel.langgraph import LangGraphToolBuilder
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from agents.model import get_chat_model
 from tools.context_tools import get_farmer_context, update_farmer_context
@@ -59,9 +59,9 @@ Call update_farmer_context with anything new the farmer told you (crop,
 location).
 """
 
-market_agent = create_react_agent(
+market_agent = create_agent(
     name="market",
     tools=tools,
     model=model,
-    prompt=MARKET_INSTRUCTIONS,
+    system_prompt=MARKET_INSTRUCTIONS,
 )

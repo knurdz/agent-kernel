@@ -10,7 +10,7 @@ that state a chemical and dosage without a prior allow verdict.
 """
 
 from agentkernel.langgraph import LangGraphToolBuilder
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from agents.knowledge_guardrails import build_safety_validation_guard
 from agents.model import get_chat_model
@@ -72,13 +72,15 @@ Call update_farmer_context with the crop (and the disease, if newly
 confirmed) when they are not already recorded.
 """
 
-knowledge_agent = create_react_agent(
+knowledge_agent = create_agent(
     name="knowledge",
     tools=tools,
     model=model,
-    prompt=KNOWLEDGE_INSTRUCTIONS,
-    post_model_hook=build_safety_validation_guard(
-        model=get_chat_model(),
-        extra_tools=tools,
-    ),
+    system_prompt=KNOWLEDGE_INSTRUCTIONS,
+    middleware=[
+        build_safety_validation_guard(
+            model=get_chat_model(),
+            extra_tools=tools,
+        )
+    ],
 )

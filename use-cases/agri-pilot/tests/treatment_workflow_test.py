@@ -20,10 +20,10 @@ credentials, mirroring tests/supervisor_guardrules_test.py.
 import json
 
 import pytest
+from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
 
 from agents.knowledge_agent import KNOWLEDGE_INSTRUCTIONS
 from agents.knowledge_agent import tools as knowledge_tools
@@ -120,7 +120,7 @@ def test_unvalidated_chemical_plus_dosage_triggers_correction():
     bad_reply = AIMessage(content="Apply copper hydroxide at 3 g/L at the first sign of disease.")
     state = {"messages": [HumanMessage(content="what should I spray?"), bad_reply]}
 
-    result = guard(state)
+    result = guard.after_model(state, None)
 
     assert len(model.invoke_calls) == 1
     correction, retry = result["messages"]
@@ -136,7 +136,7 @@ def test_invalidated_by_alias_too():
     """An alias for a known chemical is caught just like the canonical name."""
     guard, model = _guard(response=AIMessage(content="ok"))
     bad_reply = AIMessage(content="Use a copper-based fungicide at 3 g/L.")
-    result = guard({"messages": [HumanMessage(content="x"), bad_reply]})
+    result = guard.after_model({"messages": [HumanMessage(content="x"), bad_reply]}, None)
     assert len(model.invoke_calls) == 1
     assert isinstance(result["messages"][0], SystemMessage)
 
@@ -149,7 +149,7 @@ def test_allow_verdict_this_turn_passes_through():
         _tool_result_msg("c1", "allow"),
         AIMessage(content="Apply copper hydroxide at 3 g/L."),
     ]
-    result = guard({"messages": history})
+    result = guard.after_model({"messages": history}, None)
     assert result == {}
     assert model.invoke_calls == []
 
@@ -164,7 +164,7 @@ def test_reject_verdict_with_dosage_still_stated_is_corrected():
         _tool_result_msg("c1", "reject"),
         AIMessage(content="Apply mancozeb at 9 g/L."),
     ]
-    result = guard({"messages": history})
+    result = guard.after_model({"messages": history}, None)
     assert len(model.invoke_calls) == 1
     assert isinstance(result["messages"][0], SystemMessage)
 
@@ -179,7 +179,7 @@ def test_escalate_verdict_is_fail_closed():
         _tool_result_msg("c1", "escalate"),
         AIMessage(content="Apply mancozeb at 1 g/L pending an officer review."),
     ]
-    result = guard({"messages": history})
+    result = guard.after_model({"messages": history}, None)
     assert len(model.invoke_calls) == 1
     assert isinstance(result["messages"][0], SystemMessage)
 
@@ -188,7 +188,7 @@ def test_dosage_without_known_chemical_passes_through():
     """'apply 3 g/L' alone (no named chemical) is outside this guard's scope."""
     guard, model = _guard()
     bad_reply = AIMessage(content="Apply 3 g/L of the protectant.")
-    result = guard({"messages": [HumanMessage(content="x"), bad_reply]})
+    result = guard.after_model({"messages": [HumanMessage(content="x"), bad_reply]}, None)
     assert result == {}
     assert model.invoke_calls == []
 
@@ -196,7 +196,7 @@ def test_dosage_without_known_chemical_passes_through():
 def test_exact_reject_phrase_is_not_flagged():
     guard, model = _guard()
     reply = AIMessage(content="I cannot safely recommend this.")
-    result = guard({"messages": [HumanMessage(content="x"), reply]})
+    result = guard.after_model({"messages": [HumanMessage(content="x"), reply]}, None)
     assert result == {}
     assert model.invoke_calls == []
 
@@ -204,21 +204,21 @@ def test_exact_reject_phrase_is_not_flagged():
 def test_mid_loop_tool_call_message_passes_through():
     guard, model = _guard()
     last = AIMessage(content="", tool_calls=[{"name": "validate_treatment", "args": {}, "id": "call_1"}])
-    result = guard({"messages": [HumanMessage(content="x"), last]})
+    result = guard.after_model({"messages": [HumanMessage(content="x"), last]}, None)
     assert result == {}
     assert model.invoke_calls == []
 
 
 def test_empty_history_passes_through():
     guard, model = _guard()
-    assert guard({"messages": []}) == {}
+    assert guard.after_model({"messages": []}, None) == {}
     assert model.invoke_calls == []
 
 
 def test_non_final_message_is_not_the_last_is_not_corrected():
     """Only an AIMessage as the final message is a candidate for correction."""
     guard, model = _guard()
-    result = guard({"messages": [HumanMessage(content="I have escalated this myself")]})
+    result = guard.after_model({"messages": [HumanMessage(content="I have escalated this myself")]}, None)
     assert result == {}
 
 
@@ -229,7 +229,7 @@ def test_single_shot_no_recursion_on_still_bad_retry():
     guard, model = _guard(response=still_bad)
 
     bad_reply = AIMessage(content="Apply copper hydroxide at 3 g/L.")
-    result = guard({"messages": [HumanMessage(content="x"), bad_reply]})
+    result = guard.after_model({"messages": [HumanMessage(content="x"), bad_reply]}, None)
 
     assert len(model.invoke_calls) == 1
     # returned the retry verbatim, did not loop
@@ -244,7 +244,7 @@ def test_single_shot_no_recursion_on_still_bad_retry():
 class _BindableFake(FakeMessagesListChatModel):
     """FakeMessagesListChatModel that also supports bind_tools (cycling)."""
 
-    def bind_tools(self, tools):
+    def bind_tools(self, tools, **kwargs):
         object.__setattr__(self, "bound_tools", list(tools))
         return self
 
@@ -281,7 +281,7 @@ def test_hook_retry_tool_call_executes_then_passes_through():
     guard = build_safety_validation_guard(
         model=retry, extra_tools=[_fake_validate], chemical_names=KNOWN_CHEMICALS, dosage_units=KNOWN_UNITS
     )
-    agent = create_react_agent(model=main, tools=[_fake_validate], prompt="be a knowledge agent", post_model_hook=guard)
+    agent = create_agent(model=main, tools=[_fake_validate], system_prompt="be a knowledge agent", middleware=[guard])
     result = agent.invoke({"messages": [HumanMessage(content="what should I spray?")]})
 
     # The guard's corrective retry happened (correction message present).

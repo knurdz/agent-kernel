@@ -11,8 +11,19 @@ The fixture also resets every weather cache before each test so results
 never leak between tests via the module-level dicts.
 """
 
+import warnings
+
+# langchain_core replaces the global warning-filter list during its own
+# import (the default `Reviver` in load/load.py warns about the
+# `allowed_objects` default), which defeats pytest's ini filterwarnings:
+# whatever filters pytest installed are wiped before the warning fires.
+# The warning is emitted exactly once per process, so we force that
+# first import here behind an explicit ignore, before any pytest capture
+# context exists.
+warnings.filterwarnings("ignore", message=r"The default value of `allowed_objects` will change.*")
 import json
 
+import langchain_core.load  # noqa: E402,F401  (side effect only)
 import pytest
 
 import tools.weather_tool as wt

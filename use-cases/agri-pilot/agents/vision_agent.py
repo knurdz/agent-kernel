@@ -6,7 +6,7 @@ a prediction as fact (architecture doc sections 20-21).
 """
 
 from agentkernel.langgraph import LangGraphToolBuilder
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from agents.model import get_chat_model
 from tools.attachment_tool import get_attachment_path
@@ -70,9 +70,9 @@ did not reach a confident diagnosis, record the crop only; never record a
 disease name that was not diagnosed.
 """
 
-vision_agent = create_react_agent(
+vision_agent = create_agent(
     name="vision",
     tools=tools,
     model=model,
-    prompt=VISION_INSTRUCTIONS,
+    system_prompt=VISION_INSTRUCTIONS,
 )

@@ -42,6 +42,14 @@ pythonpath = ["."]
 markers = [
     "slow: downloads model weights or calls an LLM; skip with -m 'not slow'",
 ]
+filterwarnings = [
+    # langgraph_supervisor 0.0.31 builds its supervisor agent with the
+    # deprecated create_react_agent internally; fixed upstream, not by us.
+    "ignore:create_react_agent has been moved to `langchain.agents`.*:DeprecationWarning:langgraph_supervisor.*",
+    # langgraph-checkpoint 3.0.1 emits this at import time from its own
+    # JsonPlusSerializer default; nothing in our code can pass the flag.
+    "ignore:The default value of `allowed_objects` will change.*",
+]
 
 [tool.uv]
 package = false

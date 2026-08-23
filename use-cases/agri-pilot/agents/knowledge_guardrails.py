@@ -8,8 +8,8 @@ dosage it never validated — exactly the hallucinated-dosage case the
 deterministic safety tool exists to prevent (architecture doc, "Safety and
 Treatment Validation").
 
-This module adds a code-level backstop using `post_model_hook`, a node
-`langgraph.prebuilt.create_react_agent` runs after every knowledge-agent
+This module adds a code-level backstop using an `after_model` middleware
+hook, which `langchain.agents.create_agent` runs after every knowledge-agent
 LLM turn. It cannot change what the model *wrote* after the fact, but it
 can inspect the turn before it reaches the farmer: if the last message is
 a final (non-tool-call) reply that states a known chemical together with a
@@ -36,6 +36,7 @@ import json
 import re
 from typing import Any, Optional
 
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -111,34 +112,24 @@ def _validated_chemicals(messages: list) -> set[str]:
     return allowed
 
 
-def build_safety_validation_guard(
-    model: LanguageModelLike,
-    extra_tools: list[BaseTool | Any],
-    chemical_names: Optional[set[str]] = None,
-    dosage_units: Optional[set[str]] = None,
-):
-    """Build the `post_model_hook` callable for the knowledge agent.
+class SafetyValidationMiddleware(AgentMiddleware):
+    """`after_model` middleware enforcing validate-before-state on the knowledge agent.
 
-    :param model: The same (unbound) chat model the knowledge agent uses.
-        The agent's full tool set (`extra_tools`, which must include
-        `validate_treatment`) is bound to it here, so the retry call can
-        make the real validation call exactly as the agent itself could.
-    :param extra_tools: The knowledge agent's bound tools.
-    :param chemical_names: Chemical names/aliases the detector recognizes;
-        defaults to everything in `data/safety_rules.json`.
-    :param dosage_units: Dosage units the detector recognizes; defaults to
-        every unit used by the rules file.
-    :return: A callable suitable for `create_react_agent(post_model_hook=...)`.
+    Runs after every knowledge-agent LLM turn. When the turn produced a
+    final (non-tool-call) reply stating a known chemical together with a
+    dosage figure that was never allowed by `validate_treatment`, it
+    re-invokes the model once with an explicit correction and lets that
+    response take over. If the retry makes a real `validate_treatment`
+    call, LangGraph's own routing executes it exactly as if the model had
+    called it on the first try.
     """
-    names = frozenset(chemical_names if chemical_names is not None else known_chemical_names())
-    units = sorted(dosage_units if dosage_units is not None else known_dosage_units())
-    dosage_pattern = re.compile(
-        r"\d+(?:\.\d+)?\s*(?:" + "|".join(re.escape(unit) for unit in units) + r")",
-        re.IGNORECASE,
-    )
-    retry_model = model.bind_tools(list(extra_tools))
 
-    def guard(state: dict) -> dict:
+    def __init__(self, retry_model: LanguageModelLike, dosage_pattern: re.Pattern, chemical_names: frozenset):
+        self.retry_model = retry_model
+        self.dosage_pattern = dosage_pattern
+        self.chemical_names = chemical_names
+
+    def after_model(self, state: dict, runtime) -> dict:  # noqa: ANN001 - runtime is unused
         messages = state.get("messages") or []
         if not messages:
             return {}
@@ -150,7 +141,7 @@ def build_safety_validation_guard(
             return {}
 
         text = _message_text(last).lower()
-        if not dosage_pattern.search(text):
+        if not self.dosage_pattern.search(text):
             # No dosage figure stated at all (plain advice, the exact
             # rejection wording, escalation offers) — nothing to guard.
             return {}
@@ -158,12 +149,40 @@ def build_safety_validation_guard(
         allowed = _validated_chemicals(messages)
         violating = any(
             re.search(rf"\b{re.escape(name)}\b", text) and (resolve_chemical(name) or name) not in allowed
-            for name in names
+            for name in self.chemical_names
         )
         if not violating:
             return {}
 
-        retry_response = retry_model.invoke(messages + [_CORRECTION_MESSAGE])
+        retry_response = self.retry_model.invoke(messages + [_CORRECTION_MESSAGE])
         return {"messages": [_CORRECTION_MESSAGE, retry_response]}
 
-    return guard
+
+def build_safety_validation_guard(
+    model: LanguageModelLike,
+    extra_tools: list[BaseTool | Any],
+    chemical_names: Optional[set[str]] = None,
+    dosage_units: Optional[set[str]] = None,
+) -> SafetyValidationMiddleware:
+    """Build the `after_model` middleware for the knowledge agent.
+
+    :param model: The same (unbound) chat model the knowledge agent uses.
+        The agent's full tool set (`extra_tools`, which must include
+        `validate_treatment`) is bound to it here, so the retry call can
+        make the real validation call exactly as the agent itself could.
+    :param extra_tools: The knowledge agent's bound tools.
+    :param chemical_names: Chemical names/aliases the detector recognizes;
+        defaults to everything in `data/safety_rules.json`.
+    :param dosage_units: Dosage units the detector recognizes; defaults to
+        every unit used by the rules file.
+    :return: A middleware instance suitable for `create_agent(middleware=...)`.
+    """
+    names = frozenset(chemical_names if chemical_names is not None else known_chemical_names())
+    units = sorted(dosage_units if dosage_units is not None else known_dosage_units())
+    dosage_pattern = re.compile(
+        r"\d+(?:\.\d+)?\s*(?:" + "|".join(re.escape(unit) for unit in units) + r")",
+        re.IGNORECASE,
+    )
+    retry_model = model.bind_tools(list(extra_tools))
+
+    return SafetyValidationMiddleware(retry_model=retry_model, dosage_pattern=dosage_pattern, chemical_names=names)
