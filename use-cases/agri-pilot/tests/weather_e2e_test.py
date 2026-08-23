@@ -1,7 +1,7 @@
 """Live-LLM integration tests for the resource workflow (Increments 5.2, 5.3).
 
 Drives the full triage -> resource path through the Agent Kernel Runtime,
-the same way tests/treatment_chain_e2e_test.py does for vision->knowledge.
+the same way demo.py / the Phase 12 REST API do it.
 
 Requires a real model credential (OPENAI_API_KEY or GEMINI_API_KEY).
 Marked `slow` so it is skipped by `pytest -m "not slow"`.

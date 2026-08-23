@@ -1,7 +1,8 @@
-"""Unit tests for tools/weather_tool.py (Increment 5.1).
+"""Unit tests for tools/weather_tool.py (Increments 5.1, 5.4).
 
-The mock is deterministic (sha256-seeded per location), so no fixtures or
-network are needed. Failure paths (Increment 5.4) are exercised by
+Since Increment 11.1 the fetch core calls the live Open-Meteo API; the
+shared conftest stubs its HTTP seam with canned payloads so these tests
+stay deterministic and network-free. Failure paths are exercised by
 monkeypatching the `_fetch_forecast` seam.
 """
 
@@ -39,21 +40,11 @@ def test_return_shape_matches_documented_schema():
         assert day["et0_mm"] > 0.0
 
 
-def test_deterministic_for_same_location_across_calls_and_processes():
+def test_repeated_calls_identical_for_same_location():
     first = get_forecast("kandy", days=2)
     second = get_forecast("Kandy", days=2)
     assert first["days"] == second["days"]
-
-    one = get_forecast("kandy", days=1)["days"][0]
-
-    # sha256 seeding must not depend on process-level salted hash(): a
-    # fresh interpreter yields identical values.
-    import subprocess
-    import sys
-
-    code = "from tools.weather_tool import get_forecast;" "print(get_forecast('kandy', days=1)['days'][0])"
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
-    assert str(one) in out.stdout
+    assert second["cached"] is True  # short-TTL cache serves the repeat
 
 
 def test_different_locations_give_different_data():
@@ -111,13 +102,6 @@ def test_spray_not_suitable_when_windy(monkeypatch):
     assert "drift" in result["reason"].lower()
 
 
-@pytest.fixture(autouse=True)
-def _clear_cache():
-    wt._cache.clear()
-    yield
-    wt._cache.clear()
-
-
 # ---------------------------------------------------------------------------
 # Increment 5.4 — failure handling: retry, cache fallback, honest limitation
 # ---------------------------------------------------------------------------
@@ -171,7 +155,7 @@ def test_no_cache_states_limitation_instead_of_guessing(monkeypatch):
     assert result["reliable"] is False
     assert result["days"] == []
     assert "cannot" in result["message"].lower() or "try again" in result["message"].lower()
-    assert "reliable weather forecast" in result["message"]
+    assert "could not access weather data" in result["message"]
 
 
 def test_spray_verdict_cannot_determine_when_forecast_unavailable(monkeypatch):
@@ -183,4 +167,4 @@ def test_spray_verdict_cannot_determine_when_forecast_unavailable(monkeypatch):
 
     result = assess_spray_conditions("offline-village", days_ahead=1)
     assert result["verdict"] == "cannot determine"
-    assert "forecast" in result["reason"].lower()
+    assert "could not access weather data" in result["reason"]
