@@ -1,6 +1,6 @@
-"""Phase 15.1: DB models."""
+"""Phase 15.1: DB models. Phase 18 adds the pending-duplicate partial index."""
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -119,3 +119,85 @@ def test_quantity_validation():
     except ValueError:
         pass
     db.close()
+
+
+# ---------- Phase 18: pending-duplicate partial unique index ----------
+
+PENDING_IDX = "ux_connection_requests_pending"
+
+
+def test_pending_unique_index_declared_for_both_dialects():
+    table = ConnectionRequest.__table__
+    idx = {i.name: i for i in table.indexes}.get(PENDING_IDX)
+    assert idx is not None, f"{PENDING_IDX} missing from ConnectionRequest metadata"
+    assert idx.unique
+    assert idx.dialect_options["sqlite"]["where"] is not None
+    assert idx.dialect_options["postgresql"]["where"] is not None
+
+
+def _seed_farmer_buyer_listing(db):
+    farmer = User(
+        phone_number="+94770000110", role="farmer", password_hash="hash", name="F", subscription_status="active"
+    )
+    buyer = User(
+        phone_number="+94770000111", role="buyer", password_hash="hash", name="B", subscription_status="active"
+    )
+    db.add_all([farmer, buyer])
+    db.flush()
+    listing = Listing(farmer_id=farmer.id, crop="rice", quantity_kg=5.0, status="active")
+    db.add(listing)
+    db.flush()
+    return listing, buyer
+
+
+def test_partial_index_blocks_second_pending_row():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    db = Session()
+    try:
+        listing, buyer = _seed_farmer_buyer_listing(db)
+        db.add(ConnectionRequest(listing_id=listing.id, buyer_id=buyer.id, status="pending"))
+        db.commit()
+
+        # Second pending row for the same (listing_id, buyer_id) violates the partial index.
+        db.add(ConnectionRequest(listing_id=listing.id, buyer_id=buyer.id, status="pending"))
+        try:
+            db.commit()
+            assert False, "expected IntegrityError from partial unique index"
+        except IntegrityError:
+            db.rollback()
+
+        # A non-pending row never conflicts.
+        db.add(ConnectionRequest(listing_id=listing.id, buyer_id=buyer.id, status="declined"))
+        db.commit()
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_partial_index_allows_new_pending_after_terminal():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    db = Session()
+    try:
+        listing, buyer = _seed_farmer_buyer_listing(db)
+        first = ConnectionRequest(listing_id=listing.id, buyer_id=buyer.id, status="accepted")
+        db.add(first)
+        db.commit()
+
+        second = ConnectionRequest(listing_id=listing.id, buyer_id=buyer.id, status="pending")
+        db.add(second)
+        db.commit()  # must not raise
+        pendings = db.scalars(
+            select(ConnectionRequest).where(
+                ConnectionRequest.listing_id == listing.id,
+                ConnectionRequest.buyer_id == buyer.id,
+                ConnectionRequest.status == "pending",
+            )
+        ).all()
+        assert len(pendings) == 1
+    finally:
+        db.close()
+        engine.dispose()

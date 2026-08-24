@@ -82,10 +82,42 @@ since the container runs `app.py`.
    matching verify token, then subscribe to the **messages** field.
 5. Send a message to the test/sandbox number; the reply comes from AgriPilot.
 
+## Marketplace database
+
+The marketplace (auth, listings, connections) runs on **Postgres only**
+(since Phase 18; driver `psycopg` 3). Schema is versioned with Alembic under
+`migrations/`; `app.py` applies pending migrations automatically at startup
+(equivalent to `uv run python -m alembic upgrade head`). The target URL is
+resolved in this order:
+
+1. `AK_MARKETPLACE__DATABASE_URL` env var
+2. `config.yaml: marketplace.database_url`
+3. default `postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot`
+
+```bash
+# Docker (recommended): brings up a healthy postgres:16 + the app, wired automatically
+docker compose up --build
+
+# Bare metal against your own Postgres
+AK_MARKETPLACE__DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db \
+  uv run python -m alembic upgrade head
+
+# One-shot import of the legacy (Phases 15-17) SQLite data, if data/app.db exists
+AK_MARKETPLACE__DATABASE_URL=postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot \
+  uv run python scripts/migrate_sqlite_to_postgres.py   # refuses non-empty target unless --force
+```
+
+Tests do not need Postgres or Docker — each test builds its own in-memory
+SQLite engine (`tests/marketplace_postgres_smoke_test.py` additionally runs
+against real Postgres when reachable, and skips otherwise). Keep
+`AK_MARKETPLACE__JWT_SECRET` out of `config.yaml` in any shared deployment;
+set it via environment instead.
+
 ## Status
 
-Phases 0–9 (except 7) are complete. Open: Phase 7 (durable memory) and
-Phases 11–13 (hardening incl. human escalation, demo polish). The market
+Phases 0–9 (except 7), 15–18 are complete. Open: Phase 7 (durable memory)
+and Phases 11–13 (hardening incl. human escalation, demo polish). The market
 specialist from Phase 6 was removed on 2026-08-24 — no reliable
-market-price API exists for the target crops and region. Current details:
+market-price API exists for the target crops and region. The marketplace DB
+moved from SQLite to Postgres-only on 2026-08-25 (Phase 18). Current details:
 `plan/00-main.md`.

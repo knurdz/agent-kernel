@@ -27,6 +27,10 @@ dependencies = [
     "uvicorn>=0.52.4",
     # Marketplace (Phase 15)
     "sqlalchemy>=2.0",
+    # Postgres driver + migrations (Phase 18): Postgres is the only
+    # runtime backend; tests use in-memory SQLite fixtures.
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
     "passlib[bcrypt]>=1.7",
     "bcrypt==4.0.1",
     "pyjwt>=2.8",

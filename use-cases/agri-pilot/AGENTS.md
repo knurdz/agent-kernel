@@ -117,6 +117,18 @@ match the `openai-guardrails` `PipelineBundles` schema:
 - `state/farmer_context.py` — per-session farmer state tool.
 - `data/` — knowledge docs (header + `===` + body format), `safety_rules.json`,
   `data/chroma_db/` (generated; rebuild via `scripts/ingest_knowledge.py`).
+- `marketplace/` + `migrations/` — marketplace DB (Phase 15+). **Postgres-only
+  since Phase 18 (2026-08-25)**, driver psycopg 3; SQLite exists only as the
+  per-test in-memory fixture engines. Schema authority is Alembic:
+  `app.py` startup and `scripts/seed_admin.py` call
+  `marketplace.database.run_migrations()` (`= alembic upgrade head`); never
+  reintroduce `Base.metadata.create_all` as a runtime schema path. Target URL
+  precedence: `AK_MARKETPLACE__DATABASE_URL` > `config.yaml` >
+  `postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot`. Tests
+  need no Postgres or Docker; `tests/marketplace_postgres_smoke_test.py`
+  runs against real Postgres when reachable, skips otherwise. Legacy
+  `data/app.db` is read only by `scripts/migrate_sqlite_to_postgres.py`
+  (manual, refuses non-empty target unless `--force`).
 
 ## Style
 

@@ -1,23 +1,41 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agripilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agripilot}
+      POSTGRES_DB: ${POSTGRES_DB:-agripilot}
+    ports:
+      - "5432:5432" # for bare-metal alembic/psql runs; safe to drop in prod
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agripilot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   app:
     build:
       context: .
       dockerfile: deploy/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
     env_file:
       - path: .env.local
         required: false
     environment:
-      - AK_MARKETPLACE__DATABASE_URL=${AK_MARKETPLACE__DATABASE_URL:-sqlite:///./data/app.db}
+      # Postgres is the only runtime backend (Phase 18); migrations run at startup.
+      - AK_MARKETPLACE__DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-agripilot}:${POSTGRES_PASSWORD:-agripilot}@db:5432/${POSTGRES_DB:-agripilot}
       - AK_MARKETPLACE__JWT_SECRET=${AK_MARKETPLACE__JWT_SECRET:-}
       - AK_MARKETPLACE__SIGNUP_URL=${AK_MARKETPLACE__SIGNUP_URL:-http://localhost:8000/docs}
-    volumes:
-      - app_db:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
 volumes:
-  app_db:
+  pgdata:

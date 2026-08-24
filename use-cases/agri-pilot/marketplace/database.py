@@ -1,14 +1,17 @@
-"""Database engine/session for AgriPilot marketplace (Phase 15).
+"""Database engine/session for AgriPilot marketplace (Phase 15; Postgres-only since Phase 18).
 
 Uses ``AK_MARKETPLACE__DATABASE_URL`` env var when set, otherwise
-``config.yaml: marketplace.database_url`` (default ``sqlite:///./data/app.db``).
-SQLite uses ``check_same_thread=False`` and a single file; Postgres uses
-``pool_pre_ping=True``.
+``config.yaml: marketplace.database_url``, otherwise ``DEFAULT_URL``.
+Postgres is the only runtime backend (driver: psycopg 3). Schema changes go
+through Alembic (``migrations/``); call :func:`run_migrations` at startup or
+run ``uv run python -m alembic upgrade head`` manually. Tests use their own
+in-memory SQLite engines plus ``Base.metadata.create_all``.
 """
 
 from __future__ import annotations
 
 import os
+import pathlib
 from typing import Generator
 
 from sqlalchemy import create_engine
@@ -21,7 +24,9 @@ try:
 except ImportError:
     _HAS_YAML = False
 
-DEFAULT_URL = "sqlite:///./data/app.db"
+DEFAULT_URL = "postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot"
+
+_ALEMBIC_INI = pathlib.Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 def _read_config_url() -> str | None:
@@ -53,17 +58,11 @@ def get_database_url() -> str:
 
 def _build_engine(url: str | None = None):
     target = url or get_database_url()
-    connect_args: dict = {}
-    if target.startswith("sqlite"):
-        connect_args = {"check_same_thread": False}
-        engine_ = create_engine(target, connect_args=connect_args, echo=False, future=True)
-    else:
-        engine_ = create_engine(target, pool_pre_ping=True, echo=False, future=True)
-    return engine_
+    return create_engine(target, pool_pre_ping=True, echo=False, future=True)
 
 
-# Global engine/session for the app (lazy but module-level so imports work).
-# Tests override via dependency injection or by creating their own engine.
+# Global engine/session for the app. Engines connect lazily, so importing this
+# module never opens a connection (tests inject their own engines).
 engine = _build_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
@@ -81,37 +80,16 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def _ensure_farmer_contact_column(eng) -> None:
-    """Ensure farmer_profiles.contact_phone exists on existing SQLite DBs."""
-    try:
-        from sqlalchemy import text
+def run_migrations(url: str | None = None) -> None:
+    """Apply pending Alembic migrations to the configured (or given) database.
 
-        with eng.connect() as conn:
-            # Check existing columns
-            try:
-                rows = conn.execute(text("PRAGMA table_info(farmer_profiles)")).fetchall()
-                cols = {r[1] for r in rows} if rows else set()
-                if "contact_phone" not in cols:
-                    conn.execute(text("ALTER TABLE farmer_profiles ADD COLUMN contact_phone VARCHAR(20)"))
-                    conn.commit()
-            except Exception:
-                pass
-    except Exception:
-        pass
+    The single schema-authority path used at app startup; equivalent to
+    ``uv run python -m alembic upgrade head`` with ``AK_MARKETPLACE__DATABASE_URL`` set.
+    """
+    from alembic import command
+    from alembic.config import Config
 
-
-def init_db(url: str | None = None) -> None:
-    """Create all marketplace tables (idempotent)."""
+    cfg = Config(str(_ALEMBIC_INI))
     if url:
-        eng = _build_engine(url)
-        # Import models so Base metadata is populated.
-        import marketplace.models  # noqa: F401
-
-        Base.metadata.create_all(bind=eng)
-        _ensure_farmer_contact_column(eng)
-        eng.dispose()
-    else:
-        import marketplace.models  # noqa: F401
-
-        Base.metadata.create_all(bind=engine)
-        _ensure_farmer_contact_column(engine)
+        cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, "head")

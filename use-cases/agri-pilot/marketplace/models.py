@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime, timezone
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from marketplace.database import Base
@@ -122,6 +122,17 @@ class ConnectionRequest(Base):
     __table_args__ = (
         Index("ix_connection_listing_id", "listing_id"),
         Index("ix_connection_buyer_id", "buyer_id"),
+        # DB-level backstop for the service-layer pending-uniqueness guard
+        # (service.create_connection_request). Declared for BOTH dialects so
+        # the in-memory SQLite test schema matches the Postgres runtime schema.
+        Index(
+            "ux_connection_requests_pending",
+            "listing_id",
+            "buyer_id",
+            unique=True,
+            sqlite_where=text("status = 'pending'"),
+            postgresql_where=text("status = 'pending'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -137,6 +148,3 @@ class ConnectionRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
-
-    # Note: App-level uniqueness for (listing_id, buyer_id) where status=pending
-    # is enforced in service layer for SQLite compat; Postgres partial index in Phase 18.

@@ -28,7 +28,9 @@ guardrail:
     config_path: guardrails_output.json
 
 marketplace:
-  database_url: "sqlite:///./data/app.db"
+  # Postgres is the only runtime backend (Phase 18). Override with
+  # AK_MARKETPLACE__DATABASE_URL; schema via `alembic upgrade head`.
+  database_url: "postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot"
   jwt_secret: "dev-only-jwt-secret-CHANGE-ME-32-chars-minimum-length-1234"
   jwt_expiry_hours: 24
   signup_url: "http://localhost:8000/docs"

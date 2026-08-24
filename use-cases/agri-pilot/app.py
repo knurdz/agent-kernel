@@ -13,14 +13,14 @@ from agentkernel.api import RESTAPI
 from agentkernel.langgraph import LangGraphModule
 
 from agents.supervisor import triage_agent
-from marketplace.database import init_db
+from marketplace.database import run_migrations
 from marketplace.routers.auth import router as auth_router
 from marketplace.routers.buyer import router as buyer_router
 from marketplace.routers.farmer import router as farmer_router
 from whatsapp_handler import FastAckWhatsAppHandler
 
-# Ensure marketplace tables exist before serving.
-init_db()
+# Apply pending Alembic migrations before serving (single schema authority).
+run_migrations()
 
 LangGraphModule([triage_agent])
 

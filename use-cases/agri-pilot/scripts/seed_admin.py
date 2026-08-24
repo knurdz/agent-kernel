@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from sqlalchemy import select
 
 from marketplace.auth import hash_password, normalize_phone
-from marketplace.database import SessionLocal, init_db
+from marketplace.database import SessionLocal, run_migrations
 from marketplace.models import User
 
 if __name__ == "__main__":
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     if not phone or not pwd:
         print("Set AK_MARKETPLACE__ADMIN_PHONE and AK_MARKETPLACE__ADMIN_PASSWORD to seed admin")
         raise SystemExit(0)
-    init_db()
+    run_migrations()
     db = SessionLocal()
     try:
         norm = normalize_phone(phone)
