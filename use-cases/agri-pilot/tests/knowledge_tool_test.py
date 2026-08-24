@@ -5,7 +5,6 @@ isolated from the real seeded knowledge base and from each other.
 """
 
 import pytest
-
 from agentkernel.knowledgebase.chroma import ChromaManager
 
 from tools.knowledge_tool import _query

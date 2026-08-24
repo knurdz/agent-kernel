@@ -12,11 +12,10 @@ import io
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from agentkernel.core.base import Session
 from agentkernel.core.model import AgentRequestImage, AgentRequestText
 from agentkernel.core.runtime import Runtime
+from PIL import Image
 
 import demo  # noqa: F401  - importing registers agents with the Runtime
 

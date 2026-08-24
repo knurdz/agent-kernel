@@ -13,9 +13,18 @@ from agentkernel.api import RESTAPI
 from agentkernel.langgraph import LangGraphModule
 
 from agents.supervisor import triage_agent
+from marketplace.database import init_db
+from marketplace.routers.auth import router as auth_router
+from marketplace.routers.farmer import router as farmer_router
 from whatsapp_handler import FastAckWhatsAppHandler
 
+# Ensure marketplace tables exist before serving.
+init_db()
+
 LangGraphModule([triage_agent])
+
+RESTAPI.add(auth_router)
+RESTAPI.add(farmer_router)
 
 
 if __name__ == "__main__":

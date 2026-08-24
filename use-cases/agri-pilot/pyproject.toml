@@ -25,6 +25,12 @@ dependencies = [
     "torchvision>=0.28.0",
     "transformers>=4.40.0",
     "uvicorn>=0.52.4",
+    # Marketplace (Phase 15)
+    "sqlalchemy>=2.0",
+    "passlib[bcrypt]>=1.7",
+    "bcrypt==4.0.1",
+    "pyjwt>=2.8",
+    "email-validator>=2.0",
 ]
 
 [dependency-groups]
@@ -49,6 +55,15 @@ filterwarnings = [
     # langgraph-checkpoint 3.0.1 emits this at import time from its own
     # JsonPlusSerializer default; nothing in our code can pass the flag.
     "ignore:The default value of `allowed_objects` will change.*",
+    # passlib handlers import the stdlib `crypt` module which is deprecated
+    # in Python 3.13; not actionable for us.
+    "ignore:'crypt' is deprecated.*:DeprecationWarning",
+    "ignore:.*crypt is deprecated.*:DeprecationWarning",
+    # PyJWT warns when HMAC key <32 bytes for HS256 (RFC 7518 §3.2).
+    # The default dev secret in config.yaml is long enough now, but keep
+    # the filter so short test-only secrets don't spam the suite.
+    "ignore:The HMAC key is.*:UserWarning",
+    "ignore::jwt.warnings.InsecureKeyLengthWarning",
 ]
 
 [tool.uv]

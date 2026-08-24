@@ -27,6 +27,15 @@ guardrail:
     model: gpt-4o-mini
     config_path: guardrails_output.json
 
+marketplace:
+  database_url: "sqlite:///./data/app.db"
+  jwt_secret: "dev-only-jwt-secret-CHANGE-ME-32-chars-minimum-length-1234"
+  jwt_expiry_hours: 24
+  signup_url: "http://localhost:8000/docs"
+
+api:
+  custom_router_prefix: ""
+
 test:
   mode: fuzzy
 

@@ -8,8 +8,16 @@ services:
     env_file:
       - path: .env.local
         required: false
+    environment:
+      - AK_MARKETPLACE__DATABASE_URL=${AK_MARKETPLACE__DATABASE_URL:-sqlite:///./data/app.db}
+      - AK_MARKETPLACE__JWT_SECRET=${AK_MARKETPLACE__JWT_SECRET:-}
+      - AK_MARKETPLACE__SIGNUP_URL=${AK_MARKETPLACE__SIGNUP_URL:-http://localhost:8000/docs}
+    volumes:
+      - app_db:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
+volumes:
+  app_db:

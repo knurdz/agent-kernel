@@ -8,3 +8,5 @@ __pycache__/
 .agents/
 plan/
 data/chroma_db/
+data/app.db
+data/app.db-*
