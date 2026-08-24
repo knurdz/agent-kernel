@@ -13,13 +13,25 @@ from sqlalchemy.orm import Session
 from marketplace.auth import get_current_user, require_active_subscription, require_role
 from marketplace.database import get_db
 from marketplace.models import Listing, User
-from marketplace.schemas import ListingCreate, ListingResponse, ListingUpdate, PaginatedListings
+from marketplace.schemas import (
+    BuyerPublic,
+    ConnectionResponse,
+    ConnectionWithListingAndBuyer,
+    ContactResponse,
+    ListingCreate,
+    ListingResponse,
+    ListingUpdate,
+    PaginatedListings,
+)
 from marketplace.service import (
     count_own_listings,
     create_listing,
     delete_listing,
+    get_connection_contact,
     get_listing,
+    list_farmer_connections,
     list_own_listings,
+    update_connection_status,
     update_listing,
 )
 
@@ -102,3 +114,88 @@ def remove_listing(listing_id: int, db: Session = Depends(get_db), farmer: User 
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
     return None
+
+
+@router.get("/connections", response_model=list[ConnectionWithListingAndBuyer])
+def get_farmer_connections(
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    from marketplace.models import BuyerProfile, Listing
+    from marketplace.models import User as UserModel
+
+    conns = list_farmer_connections(db, farmer.id)
+    result = []
+    for c in conns:
+        listing = db.get(Listing, c.listing_id)
+        buyer_user = db.get(UserModel, c.buyer_id)
+        buyer_profile = db.get(BuyerProfile, c.buyer_id) if buyer_user else None
+        buyer_pub = BuyerPublic(
+            id=buyer_user.id if buyer_user else c.buyer_id,
+            name=buyer_user.name if buyer_user else "unknown",
+            district=buyer_profile.district if buyer_profile else None,
+            business_name=buyer_profile.business_name if buyer_profile else None,
+        )
+        result.append(
+            ConnectionWithListingAndBuyer(
+                id=c.id,
+                listing_id=c.listing_id,
+                buyer_id=c.buyer_id,
+                status=c.status,
+                message=c.message,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+                listing=listing,  # type: ignore[arg-type]
+                buyer=buyer_pub,
+            )
+        )
+    return result
+
+
+@router.patch("/connections/{connection_id}", response_model=ConnectionResponse)
+def patch_connection(
+    connection_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    # Expect {"status": "accepted"|"declined"|"completed"}
+    new_status = payload.get("status") if isinstance(payload, dict) else None  # type: ignore[union-attr]
+    if new_status not in {"accepted", "declined", "completed"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid status")
+    try:
+        updated = update_connection_status(db, farmer_id=farmer.id, connection_id=connection_id, new_status=new_status)
+    except ValueError as exc:
+        msg = str(exc)
+        if "already terminal" in msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="already terminal") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from exc
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="connection not found")
+    return updated
+
+
+@router.get("/connections/{connection_id}/contact", response_model=ContactResponse)
+def get_contact_for_farmer(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    from marketplace.service import get_connection_contact as _get_contact
+
+    try:
+        conn, listing, phone = _get_contact(
+            db, connection_id=connection_id, requester_id=farmer.id, requester_role="farmer"
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="connection not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return ContactResponse(
+        phone_number=phone,
+        listing_id=listing.id,
+        connection_id=conn.id,
+        status=conn.status,
+    )

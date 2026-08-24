@@ -93,7 +93,10 @@ def _increment_count(tool_name: str) -> int | None:
 
 def _run_with_timeout(func: Callable[..., Any], args: tuple, kwargs: dict) -> Any:
     """Run one tool call, giving up after DEFAULT_TIMEOUT_SECONDS."""
-    future = _executor.submit(func, *args, **kwargs)
+    import contextvars
+
+    ctx = contextvars.copy_context()
+    future = _executor.submit(ctx.run, func, *args, **kwargs)
     return future.result(timeout=DEFAULT_TIMEOUT_SECONDS)
 
 

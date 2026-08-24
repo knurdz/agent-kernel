@@ -73,6 +73,7 @@ class FarmerProfile(Base):
     location: Mapped[str | None] = mapped_column(String(120), nullable=True)
     district: Mapped[str | None] = mapped_column(String(120), nullable=True)
     preferred_language: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="farmer_profile")
 

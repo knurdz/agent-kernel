@@ -54,6 +54,9 @@ def _post_request(payload: dict) -> Request:
 def _handler_with_recorder(processed: list) -> FastAckWhatsAppHandler:
     logging.getLogger("agripilot.whatsapp").setLevel(logging.ERROR)
     handler = FastAckWhatsAppHandler()
+    # Fast-ack tests are not marketplace-gate tests — bypass WhatsApp subscription gate
+    # (which would otherwise block unknown wa_id "15550001111" with signup URL)
+    handler._skip_marketplace_gate = True  # type: ignore[attr-defined]
     # Other tests import demo, which load_dotenv()s .env.local; a real
     # APP_SECRET there would make the synthetic requests below fail
     # signature verification. Force it off for these tests.

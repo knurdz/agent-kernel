@@ -17,6 +17,14 @@ from agents.resource_agent import resource_agent
 from agents.supervisor_guardrails import build_narration_judge, build_supervisor_post_model_hook
 from agents.vision_agent import vision_agent
 from tools.context_tools import get_farmer_context, update_farmer_context
+from tools.marketplace_tools import (
+    browse_listings_tool,
+    connect_to_listing_tool,
+    create_listing_tool,
+    delete_listing_tool,
+    list_my_listings_tool,
+    match_listings_tool,
+)
 from tools.plan_tools import (
     clear_active_plan_tool,
     get_active_plan,
@@ -34,6 +42,12 @@ tools = LangGraphToolBuilder.bind(
         set_active_plan,
         mark_plan_step,
         clear_active_plan_tool,
+        create_listing_tool,
+        list_my_listings_tool,
+        delete_listing_tool,
+        browse_listings_tool,
+        match_listings_tool,
+        connect_to_listing_tool,
     ]
 )
 
@@ -126,6 +140,10 @@ earlier work — especially CROP_HEALTH after a rejected or unclear photo.
   so I can't tell you where to sell."). NEVER quote, estimate, or guess
   any price from your own knowledge, and do not delegate to a
   specialist — none of them has price data.
+ - If the user has a marketplace account and says they have a quantity of a crop to sell ("I have 500kg of tomatoes", "තක්කාලි 200kg විකුණන්න තියෙනවා"), extract crop + quantity (and price/harvest_date if given) and call create_listing_tool immediately. Do not ask for information already supplied. If quantity or crop is missing, ask once for the missing piece, then call the tool. After a successful return, confirm the listing ID and that it now appears for buyers. Never invent a farmer_id, quantity, or price — rely on tool return. This is a direct tool call, not a handoff (Step 3a applies).
+- If the farmer asks to see their own sell listings ("show my listings", "my tomatoes stock"), call list_my_listings_tool. If they ask to remove/delete a listing ("delete listing 5", "remove my tomato listing"), call delete_listing_tool with the listing ID.
+- Buyer discovery: if the user asks to see/find/match listings ("show me tomato listings near Kandy", "I need 200kg of rice"), call browse_listings_tool or match_listings_tool with extracted filters. Prefer match_listings_tool when the buyer states a desired quantity. Both require login — if the tool returns not authenticated, tell the user to log in via the app.
+- Buyer connect: if the buyer says "I want that listing" / "contact the farmer", call connect_to_listing_tool with the previously shown listing_id (if multiple were shown, ask which one). Relay the connection status — never expose phone via chat (phone is via separate GET .../contact after accepted). Never let a buyer create a sell listing — if a buyer asks to sell, reply "Only farmer accounts can create sell listings. Create a farmer account or log in as a farmer."
 - GENERAL and SYSTEM intents: answer directly.
 - For any other weather question you can answer without forecast data,
   do so directly; anything needing actual conditions goes to `resource`.

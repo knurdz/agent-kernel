@@ -26,13 +26,22 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 
     pwd_hash = hash_password(payload.password)
 
-    # New farmers/buyers default to active so local dev isn't dead-ended (Phase 15.3 note).
+    # Farmer defaults to active, buyer to none (no subscription for buyers — Phases 16/17).
+    # Contact phone only for farmers (optional, fallback to primary phone for buyer display).
+    sub_status = "active" if payload.role == "farmer" else "none"
+    contact_phone_norm = None
+    if payload.role == "farmer" and payload.contact_phone_number:
+        try:
+            contact_phone_norm = normalize_phone(payload.contact_phone_number)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
     user = User(
         phone_number=phone,
         role=payload.role,
         password_hash=pwd_hash,
         name=payload.name,
-        subscription_status="active",
+        subscription_status=sub_status,
     )
     db.add(user)
     db.flush()
@@ -43,6 +52,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
                 location=payload.location,
                 district=payload.district,
                 preferred_language=payload.preferred_language,
+                contact_phone=contact_phone_norm,
             )
         )
     else:
@@ -80,7 +90,12 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     profile = None
     if user.role == "farmer" and user.farmer_profile:
         p = user.farmer_profile
-        profile = ProfileOut(location=p.location, district=p.district, preferred_language=p.preferred_language)
+        profile = ProfileOut(
+            location=p.location,
+            district=p.district,
+            preferred_language=p.preferred_language,
+            contact_phone=p.contact_phone,
+        )
     elif user.role == "buyer" and user.buyer_profile:
         p = user.buyer_profile
         profile = ProfileOut(business_name=p.business_name, location=p.location, district=p.district)

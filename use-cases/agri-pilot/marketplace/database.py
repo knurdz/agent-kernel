@@ -81,6 +81,25 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _ensure_farmer_contact_column(eng) -> None:
+    """Ensure farmer_profiles.contact_phone exists on existing SQLite DBs."""
+    try:
+        from sqlalchemy import text
+
+        with eng.connect() as conn:
+            # Check existing columns
+            try:
+                rows = conn.execute(text("PRAGMA table_info(farmer_profiles)")).fetchall()
+                cols = {r[1] for r in rows} if rows else set()
+                if "contact_phone" not in cols:
+                    conn.execute(text("ALTER TABLE farmer_profiles ADD COLUMN contact_phone VARCHAR(20)"))
+                    conn.commit()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def init_db(url: str | None = None) -> None:
     """Create all marketplace tables (idempotent)."""
     if url:
@@ -89,8 +108,10 @@ def init_db(url: str | None = None) -> None:
         import marketplace.models  # noqa: F401
 
         Base.metadata.create_all(bind=eng)
+        _ensure_farmer_contact_column(eng)
         eng.dispose()
     else:
         import marketplace.models  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
+        _ensure_farmer_contact_column(engine)

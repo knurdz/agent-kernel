@@ -12,6 +12,7 @@ are ignored even if they slip past the timeout window.
 
 import asyncio
 import logging
+import os
 from collections import OrderedDict
 
 from agentkernel.whatsapp import AgentWhatsAppRequestHandler
@@ -49,6 +50,30 @@ class FastAckWhatsAppHandler(AgentWhatsAppRequestHandler):
                     pending.append((message, value))
         return pending
 
+    async def _send_whatsapp_text(self, to: str, body: str) -> None:
+        """Best-effort send via Graph API; stub logs when creds missing."""
+        phone_id = os.environ.get("AK_WHATSAPP__PHONE_NUMBER_ID") or getattr(self, "_phone_number_id", None)
+        token = os.environ.get("AK_WHATSAPP__ACCESS_TOKEN") or getattr(self, "_access_token", None)
+        if not phone_id or not token or not to:
+            self._log.info("whatsapp gate stub: to=%s body=%s", to, body[:80])
+            return
+        url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "text",
+            "text": {"body": body},
+        }
+        try:
+            import httpx
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, json=payload, timeout=5)
+                self._log.info("whatsapp gate sent to %s status %s", to, getattr(resp, "status_code", "?"))
+        except Exception as exc:  # noqa: BLE001
+            self._log.warning("whatsapp gate send failed to %s: %s", to, exc, exc_info=False)
+
     async def _handle_webhook(self, request: Request) -> dict:
         if self._app_secret:
             signature = request.headers.get("x-hub-signature-256", "")
@@ -61,7 +86,97 @@ class FastAckWhatsAppHandler(AgentWhatsAppRequestHandler):
             return {"status": "ok"}
 
         pending = self._mark_and_filter(body)
+        # Subscription gate per entry (farmer-only, WhatsApp hard gate) — bypass when SKIP=1 (dev/test) or handler flagged
+        if os.environ.get("AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK") == "1" or getattr(
+            self, "_skip_marketplace_gate", False
+        ):
+            for message, value in pending:
+                asyncio.create_task(self._process_message(message, value))
+            return {"status": "ok"}
+        filtered: list[tuple[dict, dict]] = []
         for message, value in pending:
+            # wa_id from contacts (preferred) or message from
+            wa_id = None
+            try:
+                contacts = value.get("contacts") or []
+                if contacts and isinstance(contacts, list):
+                    wa_id = contacts[0].get("wa_id")
+                if not wa_id:
+                    wa_id = message.get("from")
+                # Normalize to E.164 for lookup (strip, add +, re-normalize)
+                normalized = None
+                if wa_id:
+                    raw = str(wa_id).strip()
+                    if not raw.startswith("+"):
+                        raw = "+" + raw.lstrip("+")
+                    try:
+                        from marketplace.auth import normalize_phone
+
+                        normalized = normalize_phone(raw)
+                    except Exception:
+                        normalized = None
+                if normalized:
+                    # Lookup user
+                    from sqlalchemy import select
+
+                    from marketplace.database import SessionLocal
+                    from marketplace.models import User
+
+                    db = SessionLocal()
+                    try:
+                        user = db.scalars(select(User).where(User.phone_number == normalized)).first()
+                    finally:
+                        db.close()
+                    if (
+                        not user
+                        or user.role != "farmer"
+                        or (
+                            user.subscription_status != "active"
+                            and os.environ.get("AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK") != "1"
+                        )
+                    ):
+                        signup_url = os.environ.get("AK_MARKETPLACE__SIGNUP_URL") or "http://localhost:8000/docs"
+                        try:
+                            from config import get_config  # type: ignore
+
+                            cfg_url = (
+                                get_config().get("marketplace.signup_url") if hasattr(get_config(), "get") else None
+                            )
+                            if cfg_url:
+                                signup_url = cfg_url
+                        except Exception:
+                            pass
+                        # Try config.yaml fallback
+                        if signup_url == "http://localhost:8000/docs":
+                            try:
+                                import yaml
+
+                                with open("config.yaml", "r", encoding="utf-8") as fh:
+                                    data = yaml.safe_load(fh) or {}
+                                cfg = (data.get("marketplace") or {}).get("signup_url")
+                                if isinstance(cfg, str) and cfg.strip():
+                                    signup_url = cfg.strip()
+                            except Exception:
+                                pass
+                        # Use normalized wa_id as To if available, else raw from
+                        to = normalized or wa_id or message.get("from")
+                        await self._send_whatsapp_text(
+                            to=to,
+                            body=f"AgriPilot WhatsApp is for active farmer accounts. Sign up at {signup_url}.",
+                        )
+                        self._log.info(
+                            "WhatsApp gate blocked wa_id=%s role=%s sub=%s",
+                            wa_id,
+                            getattr(user, "role", None) if user else None,
+                            getattr(user, "subscription_status", None) if user else None,
+                        )
+                        continue
+                # Passing case: keep for processing
+                filtered.append((message, value))
+            except Exception as exc:  # noqa: BLE001
+                self._log.warning("WhatsApp gate check failed for wa_id %s: %s", wa_id, exc, exc_info=False)
+                filtered.append((message, value))
+        for message, value in filtered:
             asyncio.create_task(self._process_message(message, value))
         return {"status": "ok"}
 

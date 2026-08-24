@@ -20,6 +20,7 @@ class SignupRequest(BaseModel):
     district: Optional[str] = Field(default=None, max_length=120)
     preferred_language: Optional[str] = Field(default=None, max_length=20)
     business_name: Optional[str] = Field(default=None, max_length=120)
+    contact_phone_number: Optional[str] = Field(default=None, max_length=20)
 
     @field_validator("phone_number")
     @classmethod
@@ -28,6 +29,18 @@ class SignupRequest(BaseModel):
         norm = re.sub(r"[\s\-\(\)]", "", v.strip())
         if not PHONE_RE.match(norm):
             raise ValueError("phone_number must be E.164, e.g. +94770000001")
+        return norm
+
+    @field_validator("contact_phone_number")
+    @classmethod
+    def validate_contact_phone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        norm = re.sub(r"[\s\-\(\)]", "", v.strip())
+        if not norm:
+            return None
+        if not PHONE_RE.match(norm):
+            raise ValueError("contact_phone_number must be E.164, e.g. +94770000002")
         return norm
 
 
@@ -54,6 +67,7 @@ class ProfileOut(BaseModel):
     district: Optional[str] = None
     preferred_language: Optional[str] = None
     business_name: Optional[str] = None
+    contact_phone: Optional[str] = None
 
 
 class MeResponse(BaseModel):
@@ -134,3 +148,61 @@ class ConnectionResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BuyerPublic(BaseModel):
+    id: int
+    name: str
+    district: Optional[str] = None
+    business_name: Optional[str] = None
+
+
+class FarmerPublic(BaseModel):
+    id: int
+    name: str
+    district: Optional[str] = None
+
+
+class ConnectionWithListing(BaseModel):
+    id: int
+    listing_id: int
+    buyer_id: int
+    status: str
+    message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    listing: ListingResponse
+
+    model_config = {"from_attributes": True}
+
+
+class ConnectionWithListingAndBuyer(BaseModel):
+    id: int
+    listing_id: int
+    buyer_id: int
+    status: str
+    message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    listing: ListingResponse
+    buyer: BuyerPublic
+
+    model_config = {"from_attributes": True}
+
+
+class MatchItem(BaseModel):
+    listing: ListingResponse
+    score: int
+    reason: str
+
+
+class MatchResponse(BaseModel):
+    items: list[MatchItem]
+    query: dict
+
+
+class ContactResponse(BaseModel):
+    phone_number: str
+    listing_id: int
+    connection_id: int
+    status: str
