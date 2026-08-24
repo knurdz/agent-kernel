@@ -1,7 +1,7 @@
-"""Weather tools for AgriPilot (Increments 5.1, 5.4, 11.1).
+"""Weather tools for AgriPilot.
 
 `get_forecast` is the single source of forecast data for the resource
-agent. Increment 11.1 swapped the deterministic mock for the live
+agent. Swapped the deterministic mock for the live
 Open-Meteo API behind the exact same return shape, so the schema below is
 a contract — do not change it casually:
 
@@ -23,7 +23,7 @@ a contract — do not change it casually:
             ...  # one entry per requested day, starting today
         ],
         "message": None,              # farmer-facing limitation message on failure
-        "conflict": None,             # Increment 7.3: {"detected", "details", "message"}
+        "conflict": None,             # {"detected", "details", "message"}
     }
 
 Data source: Open-Meteo (https://open-meteo.com) — free for non-commercial
@@ -35,7 +35,7 @@ variables.
 On failure the tool never invents numbers: transient HTTP/network errors
 retry with backoff, then fall back to the last cached forecast for that
 location (`reliable=True, cached=True`) or report `reliable=False` with a
-limitation `message` (Increment 5.4). A location the geocoder does not
+limitation `message`. A location the geocoder does not
 know fails fast with its own message instead of burning retries.
 """
 
@@ -74,7 +74,15 @@ SPRAY_MAX_RAIN_PROBABILITY = 0.3
 SPRAY_MAX_RAIN_MM = 2.0
 SPRAY_MAX_WIND_KMH = 15.0
 
-# Increment 7.3: a fresh forecast "conflicts" with the previously cached
+# Irrigation decision logic: a day's need is the water
+# balance `et0_mm - rain_mm`; rain_probability only hedges between
+# IRRIGATE and MONITOR when a deficit exists, and heavy-rain days are
+# never irrigated on top of regardless of the math.
+IRRIGATION_RANGE_DAYS_MAX = 7
+RAIN_CONFIDENCE_THRESHOLD = 0.70
+HEAVY_RAIN_MM = 20.0
+
+# A fresh forecast "conflicts" with the previously cached
 # one for the same location when any overlapping field differs by more
 # than these tolerances. With live data natural drift between fetches can
 # trip these; AGRIPILOT_DEBUG_WEATHER_CONFLICT=1 forces divergent readings
@@ -239,6 +247,13 @@ def _map_daily_response(payload: dict[str, Any], days: int) -> list[dict[str, An
     out: list[dict[str, Any]] = []
     for index in range(days):
         iso_date = str(times[index])
+        et0_mm = round(
+            _require_number(series["et0_fao_evapotranspiration"][index], "et0_fao_evapotranspiration", iso_date), 1
+        )
+        if et0_mm <= 0:
+            # Physically implausible : treat as a data
+            # anomaly and fail the fetch rather than verdict from it.
+            raise ValueError(f"implausible {iso_date} reference evapotranspiration: {et0_mm}")
         out.append(
             {
                 "date": iso_date,
@@ -259,12 +274,7 @@ def _map_daily_response(payload: dict[str, Any], days: int) -> list[dict[str, An
                 "wind_kmh": round(
                     _require_number(series["wind_speed_10m_max"][index], "wind_speed_10m_max", iso_date), 1
                 ),
-                "et0_mm": round(
-                    _require_number(
-                        series["et0_fao_evapotranspiration"][index], "et0_fao_evapotranspiration", iso_date
-                    ),
-                    1,
-                ),
+                "et0_mm": et0_mm,
             }
         )
     return out
@@ -276,8 +286,7 @@ def _fetch_forecast(location: str, days: int) -> dict[str, list[dict[str, Any]]]
     Geocodes the normalized location (cached), pulls the daily forecast
     and maps it onto the contract shape. With
     AGRIPILOT_DEBUG_WEATHER_CONFLICT=1 the mapped readings drift further
-    apart on every call so repeated fetches disagree (Increment 7.3
-    manual testing).
+    apart on every call so repeated fetches disagree.
     """
     latitude, longitude, timezone = _geocode(location)
     payload = _http_get(FORECAST_URL, _forecast_params(latitude, longitude, timezone, days))
@@ -335,13 +344,15 @@ def get_forecast(location: str, days: int = FORECAST_DAYS_DEFAULT) -> dict[str, 
     earlier fetch (`as_of`) — say so plainly in your reply.
 
     :param location: Farmer's location (e.g. a town or district name).
-    :param days: Number of forecast days, starting today.
+    :param days: Number of forecast days, starting today (capped at
+        FORECAST_DAYS_MAX: Open-Meteo reaches 16 days ahead, so larger
+        requests yield at most that many entries).
     :return: The documented forecast envelope (see module docstring).
     """
     key = _location_key(location)
     ttl_key = (key, days)
 
-    # Short-TTL positive cache (Increment 11.1): repeated questions about
+    # Short-TTL positive cache: repeated questions about
     # the same location/day-count inside the window skip the network
     # entirely and stay comfortably within Open-Meteo's free-tier limits.
     ttl_seconds = _cache_ttl_seconds()
@@ -366,7 +377,7 @@ def get_forecast(location: str, days: int = FORECAST_DAYS_DEFAULT) -> dict[str, 
                 "as_of": datetime.now().isoformat(timespec="seconds"),
                 **fetched,
                 "message": None,
-                # Increment 7.3: never silently pick between disagreeing
+                # never silently pick between disagreeing
                 # readings — surface the conflict for the agent to relay.
                 "conflict": {
                     "detected": bool(conflicts),
@@ -463,3 +474,177 @@ def assess_spray_conditions(location: str, days_ahead: int = 0) -> dict[str, Any
         ),
         "conditions": day,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deterministic irrigation decision logic
+#
+# Water balance, not probability: a day's need is
+# `water_deficit_mm = et0_mm - rain_mm`. rain_probability only decides
+# between IRRIGATE and MONITOR once a deficit exists (it can never turn a
+# deficit into "no action", and it never overrides SKIP). Wind stays out —
+# that is spray-timing territory. Pure functions of the mapped forecast,
+# so the core numbers never depend on LLM judgment.
+# ---------------------------------------------------------------------------
+
+
+def _water_deficit_mm(day: dict[str, Any]) -> float:
+    """Water the crop loses beyond what forecast rain supplies, in mm."""
+    return round(day["et0_mm"] - day["rain_mm"], 1)
+
+
+def _day_irrigation_verdict(day: dict[str, Any]) -> dict[str, Any]:
+    """Classify one forecast day: HEAVY_RAIN | SKIP | MONITOR | IRRIGATE.
+
+    Order matters: heavy rain wins over any balance math (never add
+    irrigation on top of a flood-risk day), then the water balance
+    decides, then probability hedges an existing deficit.
+    """
+    deficit = _water_deficit_mm(day)
+    chance = int(round(day["rain_probability"] * 100))
+    if day["rain_mm"] > HEAVY_RAIN_MM:
+        return {
+            "verdict": "HEAVY_RAIN",
+            "water_deficit_mm": deficit,
+            "reasoning": (
+                f"Heavy rain expected (~{day['rain_mm']} mm) — do not add irrigation "
+                "on top of this; there is waterlogging risk."
+            ),
+        }
+    if deficit <= 0:
+        return {
+            "verdict": "SKIP",
+            "water_deficit_mm": deficit,
+            "reasoning": (
+                f"Rain ({day['rain_mm']} mm expected) covers or exceeds the crop's water "
+                f"loss ({day['et0_mm']} mm) — no irrigation needed this day."
+            ),
+        }
+    if day["rain_probability"] >= RAIN_CONFIDENCE_THRESHOLD:
+        return {
+            "verdict": "MONITOR",
+            "water_deficit_mm": deficit,
+            "reasoning": (
+                f"A {deficit} mm gap remains between crop water loss ({day['et0_mm']} mm) "
+                f"and rain ({day['rain_mm']} mm), but rain chance is high ({chance}%) — "
+                "check again closer to the day before committing to watering."
+            ),
+        }
+    return {
+        "verdict": "IRRIGATE",
+        "water_deficit_mm": deficit,
+        "reasoning": (
+            f"The crop loses more water than rain supplies ({day['et0_mm']} mm loss vs "
+            f"{day['rain_mm']} mm rain, {chance}% chance) — irrigate roughly {deficit} mm "
+            "to cover the gap."
+        ),
+    }
+
+
+@guarded
+def assess_irrigation_need(location: str, days_ahead: int = 0, num_days: int = 1) -> dict[str, Any]:
+    """Decide whether the farmer should irrigate, from the forecast.
+
+    Call this for every watering question ("should I water today /
+    tomorrow / this week") instead of reading raw forecast values
+    yourself. It applies a fixed water-balance rule per day and, for
+    multi-day ranges, also a cumulative balance with one summary verdict.
+
+    :param location: Farmer's location.
+    :param days_ahead: First day to assess (0 = today, 1 = tomorrow).
+    :param num_days: How many consecutive days to assess (1 for a single
+        day, up to 7 for a week).
+    :return: Single day: {"verdict": "HEAVY_RAIN" | "SKIP" | "IRRIGATE" |
+        "MONITOR" | "CANNOT DETERMINE", "water_deficit_mm", "reasoning",
+        "conditions"}. Range (num_days >= 2): {"range_summary":
+        {"verdict", "cumulative_deficit_mm", "excluded_days"}, "per_day":
+        [{"date", "verdict", "water_deficit_mm"}, ...]}. Relay verdicts and
+        reasoning plainly; never invent numbers not present in the result.
+        A "note" field, when present, states a limitation worth relaying.
+    """
+    days_ahead = max(int(days_ahead), 0)
+    num_days = min(max(int(num_days), 1), IRRIGATION_RANGE_DAYS_MAX)
+
+    horizon_note = None
+    requested_end = days_ahead + num_days
+    if days_ahead >= FORECAST_DAYS_MAX:
+        return {
+            "verdict": "CANNOT DETERMINE",
+            "reason": (
+                f"Weather forecasts only reach {FORECAST_DAYS_MAX} days ahead, so I "
+                "cannot judge that day yet. Please ask again closer to the time."
+            ),
+        }
+    if requested_end > FORECAST_DAYS_MAX:
+        num_days = FORECAST_DAYS_MAX - days_ahead
+        horizon_note = (
+            f"Forecasts reach only {FORECAST_DAYS_MAX} days ahead, so this assessment "
+            f"covers {num_days} day(s); later days were not assessed."
+        )
+
+    single_day = num_days == 1
+    forecast = get_forecast(location, days=days_ahead + num_days)
+    if not forecast["reliable"]:
+        reason = forecast.get("message") or NO_FORECAST_MESSAGE
+        return {"verdict": "CANNOT DETERMINE", "reason": reason}
+    if not location.strip():
+        return {"verdict": "CANNOT DETERMINE", "reason": CANNOT_DETERMINE_MESSAGE}
+
+    window = forecast["days"][days_ahead : days_ahead + num_days]
+
+    if single_day:
+        result = {**_day_irrigation_verdict(window[0]), "conditions": window[0]}
+        if horizon_note:
+            result["note"] = horizon_note
+        return result
+
+    per_day = []
+    cumulative_deficit = 0.0
+    for day in window:
+        verdict = _day_irrigation_verdict(day)
+        cumulative_deficit += verdict["water_deficit_mm"]
+        per_day.append(
+            {
+                "date": day["date"],
+                "verdict": verdict["verdict"],
+                "water_deficit_mm": verdict["water_deficit_mm"],
+                **({"warning": verdict["reasoning"]} if verdict["verdict"] == "HEAVY_RAIN" else {}),
+            }
+        )
+    cumulative_deficit = round(cumulative_deficit, 1)
+
+    heavy_days = [entry["date"] for entry in per_day if entry["verdict"] == "HEAVY_RAIN"]
+    if cumulative_deficit <= 0:
+        summary_verdict = "SKIP"
+        summary_reason = (
+            f"Across these {len(per_day)} days rain ({sum(d['rain_mm'] for d in window)} mm total) "
+            f"covers the crop's water loss ({sum(d['et0_mm'] for d in window)} mm total) — "
+            "no irrigation needed for the period as a whole."
+        )
+    else:
+        summary_verdict = "IRRIGATE"
+        actionable = [entry["date"] for entry in per_day if entry["verdict"] == "IRRIGATE"]
+        summary_reason = (
+            f"Across these {len(per_day)} days the crop loses {cumulative_deficit} mm more than "
+            f"rain supplies — irrigation is likely needed on the non-SKIP days "
+            f"({', '.join(actionable) if actionable else 'see per-day verdicts'}), sized to "
+            f"about {cumulative_deficit} mm in total."
+        )
+    if heavy_days:
+        summary_reason += (
+            f" Warning: heavy rain is expected on {', '.join(heavy_days)} — do not add "
+            "irrigation on top of those days."
+        )
+
+    range_result: dict[str, Any] = {
+        "range_summary": {
+            "verdict": summary_verdict,
+            "cumulative_deficit_mm": cumulative_deficit,
+            "excluded_days": [],  # fetches are all-or-nothing; no partial data today
+            "reasoning": summary_reason,
+        },
+        "per_day": per_day,
+    }
+    if horizon_note:
+        range_result["note"] = horizon_note
+    return range_result

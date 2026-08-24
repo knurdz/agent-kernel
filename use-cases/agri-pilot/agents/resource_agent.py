@@ -1,4 +1,4 @@
-"""Resource specialist agent for AgriPilot (Increments 5.2, 5.3, 5.4).
+"""Resource specialist agent for AgriPilot.
 
 Gives irrigation advice and judges spray timing from forecast data. Like
 the knowledge specialist it is fail-closed: every number in a reply must
@@ -13,12 +13,19 @@ from langchain.agents import create_agent
 from agents.model import get_chat_model
 from tools.context_tools import get_farmer_context, update_farmer_context
 from tools.knowledge_tool import retrieve_treatment_info
-from tools.weather_tool import assess_spray_conditions, get_forecast
+from tools.weather_tool import assess_irrigation_need, assess_spray_conditions, get_forecast
 
 model = get_chat_model()
 
 tools = LangGraphToolBuilder.bind(
-    [get_forecast, assess_spray_conditions, retrieve_treatment_info, get_farmer_context, update_farmer_context]
+    [
+        get_forecast,
+        assess_spray_conditions,
+        assess_irrigation_need,
+        retrieve_treatment_info,
+        get_farmer_context,
+        update_farmer_context,
+    ]
 )
 
 RESOURCE_INSTRUCTIONS = """
@@ -46,17 +53,26 @@ Call get_forecast with the farmer's location.
 - If a tool result contains "limited": true, relay its `message` plainly
   and stop — the check hit its retry limit or timed out.
 
-## Irrigation questions ("Should I water today?")
+## Irrigation questions ("Should I water today / tomorrow / this week?")
 
-Reason ONLY from returned values:
-- Rain expected soon (rain_probability or rain_mm high): watering can be
-  delayed — say so and give the numbers.
-- Little/no rain forecast: weigh the heat (temp_max_c) and water demand
-  (et0_mm) against the growth stage (young/flowering crops need more
-  consistent moisture than mature ones).
-- Cite at least one concrete forecast value (e.g. "only a 10% chance of
-  rain tomorrow") so the farmer sees why you advise this.
-Never state a number that did not come from get_forecast.
+Call assess_irrigation_need with the location, how many days ahead the
+question starts (0 = today), and how many consecutive days it covers
+(1 for a single day, up to 7 for a week). The verdict already applies
+the water-balance logic — do NOT redo the math or reinterpret it:
+- "IRRIGATE": watering is needed — relay the reasoning (it names the
+  deficit in mm).
+- "SKIP": rain covers the crop's water loss — relay why no watering is
+  needed.
+- "MONITOR": a deficit exists but likely rain may close it — advise
+  checking again closer to the day.
+- "HEAVY_RAIN": warn plainly not to irrigate on top of that heavy-rain
+  day (waterlogging risk) — this overrides any other reading.
+- "CANNOT DETERMINE": relay the reason; usually ask for the location.
+For range queries lead with `range_summary` (one actionable headline,
+relay its reasoning), then give the per-day list so the farmer sees
+which days matter. If the result carries a "note", say so plainly.
+Never state a number that did not come from assess_irrigation_need or
+get_forecast.
 
 ## Spray-timing questions ("Can I spray tomorrow?")
 
