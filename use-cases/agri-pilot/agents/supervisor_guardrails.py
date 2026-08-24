@@ -76,7 +76,7 @@ Decide whether the reply VIOLATES any of these rules:
 
 1. CLAIMED HANDOFF: It claims a delegation or transfer already happened \
 ("I have transferred your request", "handed over to our specialist", \
-"escalated your case", "the market team has it now") when no such action \
+"escalated your case", "the support team has it now") when no such action \
 was taken.
 2. PROMISED ACTION: It promises an action is under way or information is \
 coming ("let me check", "please hold on while I retrieve", "I'll get that \

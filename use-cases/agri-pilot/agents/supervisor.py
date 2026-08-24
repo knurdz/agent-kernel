@@ -2,15 +2,16 @@
 
 Routes farmer requests to specialist agents. From Phase 2 onward this is a
 langgraph_supervisor supervisor rather than a standalone agent. Phase 3
-adds the knowledge specialist. More specialists join `agents=[...]` in
-later phases (resource, market).
+adds the knowledge specialist. More specialists join `agents=[...]` as
+later phases add them (resource). The market specialist was removed on
+2026-08-24 (no reliable market API); price questions now get an honest
+limitation reply instead of a handoff.
 """
 
 from agentkernel.langgraph import LangGraphToolBuilder
 from langgraph_supervisor import create_supervisor
 
 from agents.knowledge_agent import knowledge_agent
-from agents.market_agent import market_agent
 from agents.model import get_chat_model, get_judge_model
 from agents.resource_agent import resource_agent
 from agents.supervisor_guardrails import build_narration_judge, build_supervisor_post_model_hook
@@ -46,7 +47,7 @@ tools = LangGraphToolBuilder.bind(
 supervisor_post_model_hook = build_supervisor_post_model_hook(
     model=get_chat_model(),
     extra_tools=tools,
-    agent_names=["vision", "knowledge", "resource", "market"],
+    agent_names=["vision", "knowledge", "resource"],
     judge=build_narration_judge(get_judge_model()),
 )
 
@@ -61,6 +62,7 @@ Classify every farmer message into exactly one of these categories:
 - RESOURCES: irrigation, watering schedule, fertilizer, nutrient deficiency, soil
 - WEATHER: weather query/risk, spray timing, planting/harvest timing
 - MARKET: price, price trend, buyers, selling recommendation, comparison
+  (market-price data is NOT available in AgriPilot — see Step 3)
 - GENERAL: crop selection, planting, cultivation, harvesting, storage
 - SYSTEM: help, language change, location change, profile, unclear/unknown
 
@@ -118,8 +120,12 @@ earlier work — especially CROP_HEALTH after a rejected or unclear photo.
   `knowledge` agent instead — chemical and dosage recommendations are
   only ever given by that specialist after safety validation.
 - If the intent is MARKET (price query, selling recommendation, buyer or
-  market comparison), delegate to the `market` agent. It ranks selling
-  options from live tool data; never quote a price yourself.
+  market comparison), answer directly and honestly: AgriPilot does not
+  have market-price data, so you cannot advise on selling prices. Say
+  this plainly (e.g. "I'm sorry, I don't have access to market prices,
+  so I can't tell you where to sell."). NEVER quote, estimate, or guess
+  any price from your own knowledge, and do not delegate to a
+  specialist — none of them has price data.
 - GENERAL and SYSTEM intents: answer directly.
 - For any other weather question you can answer without forecast data,
   do so directly; anything needing actual conditions goes to `resource`.
@@ -127,21 +133,22 @@ earlier work — especially CROP_HEALTH after a rejected or unclear photo.
 ## Step 3b: Multi-intent requests — delegate to independent specialists in one turn
 
 Some messages span several independent domains. Example: "My tomatoes are
-diseased. Should I treat them or harvest and sell them now?" combines
-CROP_HEALTH (diagnosis + treatment), MARKET (selling revenue) and often
-WEATHER (can the spray even be applied). For such requests:
+diseased. Can I treat them today, and will the weather hold?" combines
+CROP_HEALTH (diagnosis + treatment) and WEATHER (spray suitability). For
+such requests:
 
-- Identify which specialist lookups are independent of each other (market
-  prices and spray conditions do not depend on each other; treatment info
-  may depend on a diagnosis).
+- Identify which specialist lookups are independent of each other (spray
+  conditions do not depend on treatment info, which may depend on a
+  diagnosis).
 - Delegate to EVERY independent specialist in this same turn, one handoff
   call each, rather than answering one part and asking the farmer to ask
   again for the rest.
 - After all results are back, give ONE combined reply that weighs the
   options against each other: e.g. treatment cost/effectiveness from
-  `knowledge` plus spray suitability from `resource` versus estimated
-  revenue from `market`. Recommend based only on tool data, and say what
-  each recommendation rests on.
+  `knowledge` plus spray suitability from `resource`. Recommend based only
+  on tool data, and say what each recommendation rests on. If the request
+  also asks about selling or prices, apply the MARKET rule above for that
+  part of the answer.
 
 Never state a chemical name or dosage yourself, even if you know one:
 treatment recommendations only come from the `knowledge` agent, which
@@ -169,7 +176,7 @@ you describe in prose.
 
 ## Step 4: Relay the specialist's answer
 
-When a specialist agent (`vision`, `knowledge`, `resource`, `market`)
+When a specialist agent (`vision`, `knowledge`, `resource`)
 returns a
 response, your
 final reply to the farmer must contain that response's actual content —
@@ -183,7 +190,7 @@ and never add chemical names or dosages of your own.
 
 triage_agent = create_supervisor(
     model=model,
-    agents=[vision_agent, knowledge_agent, resource_agent, market_agent],
+    agents=[vision_agent, knowledge_agent, resource_agent],
     tools=tools,
     prompt=TRIAGE_INSTRUCTIONS,
     post_model_hook=supervisor_post_model_hook,

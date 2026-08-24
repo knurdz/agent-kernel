@@ -19,7 +19,7 @@ Guidance for AI coding agents working on the AgriPilot use-case (`use-cases/agri
   11–13 (Phase 10 was merged into Phase 12). Two leftover unticked items are known: a
   Phase 12-blocked real-photo check and `slow` live-LLM runs awaiting real API credits —
   don't "fix" them by ticking.
-- `README.md` is stale (references nonexistent files and old status). Trust `plan/`.
+- `README.md` was stale (references nonexistent files and old status). Trust `plan/`.
 
 ## Commands
 
@@ -39,7 +39,7 @@ uv run python scripts/ingest_knowledge.py   # rebuild ChromaDB after editing dat
 - Tests need `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY` set (a dummy
   value works): importing `demo` registers agents and `agents/model.py` raises at import
   time otherwise.
-- Single file/test: `uv run pytest tests/market_tool_test.py::<test_name>` (pytest config
+- Single file/test: `uv run pytest tests/weather_tool_test.py::<test_name>` (pytest config
   lives in `pyproject.toml`: `pythonpath = ["."]`, registered `slow` marker). Use the
   project venv's pytest — there is no system-wide one.
 
@@ -89,9 +89,11 @@ match the `openai-guardrails` `PipelineBundles` schema:
 
 - `demo.py` — CLI entry point; registers `LangGraphModule([triage_agent])`.
 - `app.py` — FastAPI entry point, health check only until Phase 12.
-- `agents/supervisor.py` — langgraph_supervisor triage agent routing to four specialists:
-  `vision_agent`, `knowledge_agent`, `resource_agent`, `market_agent`. Triage rules live
+- `agents/supervisor.py` — langgraph_supervisor triage agent routing to three specialists:
+  `vision_agent`, `knowledge_agent`, `resource_agent`. Triage rules live
   in its `TRIAGE_INSTRUCTIONS` prompt, including vision→knowledge chaining within one turn.
+  Price/selling questions get an honest "no market data" reply — the market
+  specialist was removed on 2026-08-24 (no reliable API).
 - Two code-level backstops wrap the LLM prompts (prompts alone can't guarantee safety):
   - `agents/supervisor_guardrails.py` — combined `post_model_hook` on the supervisor:
     handoff-loop detection (Increment 7.4) plus narrated-action correction via an
@@ -101,7 +103,7 @@ match the `openai-guardrails` `PipelineBundles` schema:
   - `agents/knowledge_guardrails.py` — `post_model_hook` on the knowledge agent: a final
     reply naming a chemical + dosage without an `allow` verdict from `validate_treatment`
     triggers one corrective re-invocation (fail-closed, single retry, not a loop).
-- `tools/` — agent tools: vision, knowledge RAG, weather, market, farmer context, safety
+- `tools/` — agent tools: vision, knowledge RAG, weather, farmer context, safety
   validation (`validate_treatment` against `data/safety_rules.json`). Also:
   - `tools/tool_guard.py` — every data-fetching tool is wrapped in `guarded`: per-session
     call limits (`AGRIPILOT_TOOL_MAX_CALLS`, default 8) and timeouts

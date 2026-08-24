@@ -27,7 +27,7 @@ class FarmerContext:
 
     :ivar language: Farmer's preferred language (e.g. "en", "si", "ta").
         None until detected or set by the farmer.
-    :ivar location: Farmer's location, used for weather/market lookups.
+    :ivar location: Farmer's location, used for weather lookups.
     :ivar crop: The crop under discussion (e.g. "tomato").
     :ivar disease: The diagnosed disease for that crop (e.g. "early blight"),
         recorded only by the vision specialist after a confident diagnosis,

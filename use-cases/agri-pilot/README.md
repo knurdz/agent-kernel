@@ -9,10 +9,13 @@ conventions for coding agents working in this directory.
 
 ## Architecture
 
-A supervisor (`agents/supervisor.py`) routes each farmer message to four
+A supervisor (`agents/supervisor.py`) routes each farmer message to three
 specialists: `vision_agent` (crop-disease diagnosis), `knowledge_agent`
-(agricultural RAG over ChromaDB), `resource_agent` (weather + irrigation), and
-`market_agent` (crop prices). Two code-level backstops wrap the LLM prompts:
+(agricultural RAG over ChromaDB), and `resource_agent` (weather +
+irrigation). Price/selling questions get an honest "market prices not
+available" reply — the market specialist was removed on 2026-08-24 after
+no reliable market-price API could be found. Two code-level backstops wrap
+the LLM prompts:
 `agents/supervisor_guardrails.py` (handoff-loop detection + narrated-action
 correction) and `agents/knowledge_guardrails.py` (no chemical/dosage advice
 without an `allow` verdict from `tools/safety_tool.py::validate_treatment`
@@ -40,7 +43,7 @@ the whole monorepo):
 ```bash
 OPENAI_API_KEY=sk-dummy uv run pytest          # a dummy key is enough
 uv run pytest -m "not slow"                    # skip weight-download / live-LLM tests
-uv run pytest tests/market_tool_test.py::<test_name>
+uv run pytest tests/weather_tool_test.py::<test_name>
 ```
 
 ## Weather data
@@ -81,6 +84,8 @@ since the container runs `app.py`.
 
 ## Status
 
-Phases 0–6, 8 and 9 are complete. Open: Phase 7 (durable memory) and
-Phases 11–13 (real weather/market APIs, hardening incl. human escalation,
-demo polish). Current details: `plan/00-main.md`.
+Phases 0–9 (except 7) are complete. Open: Phase 7 (durable memory) and
+Phases 11–13 (hardening incl. human escalation, demo polish). The market
+specialist from Phase 6 was removed on 2026-08-24 — no reliable
+market-price API exists for the target crops and region. Current details:
+`plan/00-main.md`.

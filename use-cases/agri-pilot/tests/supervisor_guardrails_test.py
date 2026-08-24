@@ -127,7 +127,7 @@ def test_promise_like_wording_passes_when_judge_says_clean():
     guard, model = _make_guard(AIMessage(content="unused"), judge)
 
     last = AIMessage(content="Please wait here while I check — the gate opens at noon.")
-    state = {"messages": [HumanMessage(content="is the market gate open?"), last]}
+    state = {"messages": [HumanMessage(content="is the farm gate open?"), last]}
 
     assert guard(state) == {}
     assert model.invoke_calls == []
@@ -168,14 +168,14 @@ def test_judge_receives_farmer_text_reply_and_specialist_flag():
 
     state = {
         "messages": [
-            HumanMessage(content="Where should I sell my onions?"),
-            AIMessage("", tool_calls=[{"name": "transfer_to_market", "args": {}, "id": "c0"}]),
-            AIMessage(content="Keppetipola pays best today."),
+            HumanMessage(content="When should I irrigate my onions?"),
+            AIMessage("", tool_calls=[{"name": "transfer_to_resource", "args": {}, "id": "c0"}]),
+            AIMessage(content="Water them early tomorrow morning."),
         ]
     }
     guard(state)
 
-    assert judge.calls[-1] == ("Where should I sell my onions?", "Keppetipola pays best today.", True)
+    assert judge.calls[-1] == ("When should I irrigate my onions?", "Water them early tomorrow morning.", True)
 
 
 def test_judge_sees_no_specialist_consulted_without_prior_handoff():
@@ -184,15 +184,15 @@ def test_judge_sees_no_specialist_consulted_without_prior_handoff():
 
     state = {
         "messages": [
-            HumanMessage(content="Where should I sell my onions?"),
-            AIMessage(content="I did initiate a transfer to the market specialist."),
+            HumanMessage(content="When should I irrigate my onions?"),
+            AIMessage(content="I did initiate a transfer to the resource specialist."),
         ]
     }
     guard(state)
 
     assert judge.calls[-1] == (
-        "Where should I sell my onions?",
-        "I did initiate a transfer to the market specialist.",
+        "When should I irrigate my onions?",
+        "I did initiate a transfer to the resource specialist.",
         False,
     )
 
@@ -242,21 +242,21 @@ def test_violation_detected_and_corrective_retry_is_invoked():
     "bad_text",
     [
         "I have escalated your request to our knowledge base.",
-        "I did initiate a transfer to the market specialist for your request.",
-        "I’ve now transferred your request to the market specialist. They’ll provide up-to-date prices.",
+        "I did initiate a transfer to the resource specialist for your request.",
+        "I’ve now transferred your request to the resource specialist. They’ll provide up-to-date advice.",
         "I have provided the steps above.",  # claimed delivery, nothing delivered
         "As shared above, apply 2 ml per litre.",  # same class, different words
     ],
 )
 def test_all_three_violation_classes_trigger_retry(bad_text):
     """Live-failure regressions across all three judge categories: claimed
-    handoff (incl. 'transferred', seen on the market path), promised action,
+    handoff (incl. 'transferred', seen on the resource path), promised action,
     and claimed-but-absent delivery."""
-    retry_response = AIMessage(content="", tool_calls=[{"name": "transfer_to_market", "args": {}, "id": "c3"}])
+    retry_response = AIMessage(content="", tool_calls=[{"name": "transfer_to_resource", "args": {}, "id": "c3"}])
     judge = _StubJudge(True)
     guard, model = _make_guard(retry_response, judge)
 
-    state = {"messages": [HumanMessage(content="Where should I sell my onions?"), AIMessage(content=bad_text)]}
+    state = {"messages": [HumanMessage(content="When should I irrigate my onions?"), AIMessage(content=bad_text)]}
     result = guard(state)
 
     assert model.invoke_calls, f"not caught: {bad_text!r}"
