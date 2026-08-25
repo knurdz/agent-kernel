@@ -17,7 +17,7 @@ def manager(tmp_path):
         [
             {
                 "text": "Remove infected leaves and apply a copper fungicide per label.",
-                "metadata": {"crop": "tomato", "disease": "early blight", "region": "general"},
+                "metadata": {"crop": "tomato", "disease": "early blight"},
             }
         ]
     )

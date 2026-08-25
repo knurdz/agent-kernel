@@ -1,6 +1,5 @@
 crop: tomato
 disease: early blight
-region: general
 source: FAO Plant Production and Protection Division - Early Blight of Tomato
 ===
 # Early Blight (Alternaria solani) - Tomato

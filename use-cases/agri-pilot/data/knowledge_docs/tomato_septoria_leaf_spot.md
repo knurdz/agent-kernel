@@ -1,6 +1,5 @@
 crop: tomato
 disease: septoria leaf spot
-region: general
 source: FAO Plant Production and Protection Division - Septoria Leaf Spot of Tomato
 ===
 # Septoria Leaf Spot (Septoria lycopersici) - Tomato

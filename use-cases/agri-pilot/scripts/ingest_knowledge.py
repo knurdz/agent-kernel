@@ -1,7 +1,7 @@
 """Ingest verified knowledge documents from data/knowledge_docs/ into ChromaDB.
 
 Increment 3.2. Each source file is a small header of `key: value` lines
-(crop, disease, region, source), a `===` separator, then the document body.
+(crop, disease, source), a `===` separator, then the document body.
 One Chroma record is written per source file (no chunking) so the ingested
 record count can be checked directly against the number of source files.
 

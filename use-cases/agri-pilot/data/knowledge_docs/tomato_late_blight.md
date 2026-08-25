@@ -1,6 +1,5 @@
 crop: tomato
 disease: late blight
-region: general
 source: FAO Plant Production and Protection Division - Late Blight of Tomato and Potato
 ===
 # Late Blight (Phytophthora infestans) - Tomato
