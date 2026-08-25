@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv(".env.local")
 
-from agentkernel.api import RESTAPI
+from agentkernel.api import RESTAPI, AgentRESTRequestHandler
 from agentkernel.langgraph import LangGraphModule
 
 from agents.supervisor import triage_agent
@@ -30,4 +30,6 @@ RESTAPI.add(buyer_router)
 
 
 if __name__ == "__main__":
-    RESTAPI.run([FastAckWhatsAppHandler()])
+    # AgentRESTRequestHandler mounts /api/v1/chat (+ /agents); without it the
+    # explicit handler list would leave only the WhatsApp webhook routes.
+    RESTAPI.run([AgentRESTRequestHandler(), FastAckWhatsAppHandler()])
