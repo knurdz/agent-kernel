@@ -12,14 +12,8 @@ Guidance for AI coding agents working on the AgriPilot use-case (`use-cases/agri
   `.claude/commands/`) whenever the user asks for anything: load the matching skill
   (`ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-test`,
   `ak-cloud-deploy`, `ak-init`) before improvising wiring or workflow steps.
-- The canonical build plan lives in `plan/`: read `plan/00-main.md` first, then only the
-  file for the phase you are working on. Mark tasks `[x]` only after their test passes;
-  mark blocked items `(blocked: reason)`. Phases 0–6 and 9 are complete; open phases:
-  7 (durable memory), 8 (WhatsApp — blocked awaiting Meta test credentials), and
-  11–13 (Phase 10 was merged into Phase 12). Two leftover unticked items are known: a
-  Phase 12-blocked real-photo check and `slow` live-LLM runs awaiting real API credits —
-  don't "fix" them by ticking.
-- `README.md` was stale (references nonexistent files and old status). Trust `plan/`.
+- `README.md` tracks setup, endpoints, and current status; keep it in sync when
+  architecture changes.
 
 ## Commands
 
@@ -88,7 +82,7 @@ match the `openai-guardrails` `PipelineBundles` schema:
 ## Codebase map
 
 - `demo.py` — CLI entry point; registers `LangGraphModule([triage_agent])`.
-- `app.py` — FastAPI entry point, health check only until Phase 12.
+- `app.py` — FastAPI entry point.
 - `agents/supervisor.py` — langgraph_supervisor triage agent routing to three specialists:
   `vision_agent`, `knowledge_agent`, `resource_agent`. Triage rules live
   in its `TRIAGE_INSTRUCTIONS` prompt, including vision→knowledge chaining within one turn.
@@ -115,10 +109,24 @@ match the `openai-guardrails` `PipelineBundles` schema:
   - `tools/attachment_tool.py` — resolves multimodal attachment IDs to local paths
     (used by the vision agent).
 - `state/farmer_context.py` — per-session farmer state tool.
+- `state/farmer_profile.py` + `tools/profile_tools.py` — durable
+  case history per session: `record_case_outcome` appends/updates a
+  `CaseRecord` (crop, disease, severity, advice_summary, date,
+  follow_up_status open|resolved); the vision agent records diagnoses, the
+  knowledge agent records validated advice summaries. Un-guarded on purpose
+  (local session state, not external fetches). Triage Step 2b resolves
+  "it"/"getting worse" against this profile; knowledge builds on a case's
+  recorded advice.
+- Durable memory: config.yaml keeps in-memory session +
+  attachment stores for bare-metal dev and pytest; docker-compose activates
+  Redis via `AK_SESSION__TYPE/AK_SESSION__REDIS__URL` and
+  `AK_MULTIMODAL__STORAGE_TYPE/AK_MULTIMODAL__REDIS__URL` on the compose
+  `redis` service. `tests/redis_session_test.py` runs against real Redis at
+  localhost:6379 (`docker compose up -d redis`), skips otherwise.
 - `data/` — knowledge docs (header + `===` + body format), `safety_rules.json`,
   `data/chroma_db/` (generated; rebuild via `scripts/ingest_knowledge.py`).
-- `marketplace/` + `migrations/` — marketplace DB (Phase 15+). **Postgres-only
-  since Phase 18 (2026-08-25)**, driver psycopg 3; SQLite exists only as the
+- `marketplace/` + `migrations/` — marketplace DB. **Postgres-only
+   since 2026-08-25**, driver psycopg 3; SQLite exists only as the
   per-test in-memory fixture engines. Schema authority is Alembic:
   `app.py` startup and `scripts/seed_admin.py` call
   `marketplace.database.run_migrations()` (`= alembic upgrade head`); never

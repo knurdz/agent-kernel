@@ -1,123 +1,207 @@
 # AgriPilot
 
-Agentic AI agricultural assistant for smallholder farmers, built on
-[Agent Kernel](https://github.com/yaalalabs) with LangGraph.
+Agentic AI agricultural assistant for smallholder farmers, built on [Agent Kernel](https://github.com/yaalalabs) with **LangGraph** (`agentkernel.langgraph`).
 
-The incremental build plan lives in `plan/` — start with `plan/00-main.md`,
-which links one file per phase and tracks current status. `AGENTS.md` covers
-conventions for coding agents working in this directory.
+`AGENTS.md` covers conventions for coding agents working in this directory.
 
 ## Architecture
 
-A supervisor (`agents/supervisor.py`) routes each farmer message to three
-specialists: `vision_agent` (crop-disease diagnosis), `knowledge_agent`
-(agricultural RAG over ChromaDB), and `resource_agent` (weather +
-irrigation). Price/selling questions get an honest "market prices not
-available" reply — the market specialist was removed on 2026-08-24 after
-no reliable market-price API could be found. Two code-level backstops wrap
-the LLM prompts:
-`agents/supervisor_guardrails.py` (handoff-loop detection + narrated-action
-correction) and `agents/knowledge_guardrails.py` (no chemical/dosage advice
-without an `allow` verdict from `tools/safety_tool.py::validate_treatment`
-against `data/safety_rules.json`). Data-fetching tools are wrapped by
-`tools/tool_guard.py` with per-session call limits and timeouts.
+Supervisor `agents/supervisor.py:27` routes each message to three specialists: `vision_agent` (crop-disease diagnosis), `knowledge_agent` (agricultural RAG over ChromaDB `data/chroma_db/`), `resource_agent` (weather + irrigation via `tools/weather_tool.py:1` Open-Meteo). Price/selling questions get honest "no market prices" reply — market specialist removed 2026-08-24 (no reliable API).
+
+Two code-level backstops wrap LLM prompts: `agents/supervisor_guardrails.py:47` (handoff-loop + narrated-action LLM judge, `AGRIPILOT_JUDGE_PROVIDER`) and `agents/knowledge_guardrails.py` (no chemical/dosage without `allow` from `tools/safety_tool.py:1` `validate_treatment` vs `data/safety_rules.json`). Data-fetching tools are wrapped by `tools/tool_guard.py:100` (`@guarded`, per-session `AGRIPILOT_TOOL_MAX_CALLS=8`, `AGRIPILOT_TOOL_TIMEOUT_SECONDS=180`, `contextvars.copy_context`).
+
+Marketplace adds `marketplace/` (DB, auth, service, `notifications.py`, `routers/auth.py` `/api/auth`, `routers/farmer.py` `/api/farmer`, `routers/buyer.py` `/api/buyer`) + chat tools `tools/marketplace_tools.py:130` (6 `@guarded` tools bound to supervisor `agents/supervisor.py:29`). Runtime backend is **Postgres-only** (`AK_MARKETPLACE__DATABASE_URL` > `config.yaml` > `postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot`); `app.py:23` runs Alembic migrations (`marketplace.database.run_migrations()`) at startup, so schema authority is `migrations/`. Legacy SQLite `data/app.db` is read only by `scripts/migrate_sqlite_to_postgres.py`.
+
+Durable memory: sessions and multimodal attachments are Redis-backed under Docker (`AK_SESSION__*` / `AK_MULTIMODAL__*` overrides on the compose `redis` service), so conversations survive container restarts — over WhatsApp the sender's phone number *is* the session id. `state/farmer_profile.py` + `tools/profile_tools.py` keep a per-session case history (crop, disease, severity, advice, date, follow-up status); vision records diagnoses, knowledge records validated advice, and triage Step 2b resolves "it"/"getting worse" against the stored profile instead of re-asking.
+
+## Prerequisites
+
+- Python `>=3.12`, `uv` (see `pyproject.toml:6`)
+- One LLM key: `OPENAI_API_KEY` or `GEMINI_API_KEY` or `OPENROUTER_API_KEY` (auto-detected, `AGRIPILOT_MODEL_PROVIDER` to force)
+- For `app.py` / WhatsApp: `AK_WHATSAPP__ACCESS_TOKEN`, `AK_WHATSAPP__PHONE_NUMBER_ID`, `AK_WHATSAPP__VERIFY_TOKEN` (Meta Cloud API). For marketplace JWT: `AK_MARKETPLACE__JWT_SECRET` (≥32 chars in prod).
 
 ## Setup
 
 ```bash
-cp .env.local.example .env.local   # fill in at least one provider key
-./build.sh
-python demo.py
+cp .env.local.example .env.local   # fill at least one provider key (+ WhatsApp/JWT if using app.py)
+./build.sh                         # uv venv && uv sync (also uv run python scripts/ingest_knowledge.py if you edit data/knowledge_docs/)
+# Bare-metal dev (in-memory session/attachment stores; pytest needs no Docker)
+OPENAI_API_KEY=sk-dummy uv run pytest -m "not slow"   # dummy key enough for unit tests
+python demo.py                      # CLI (LangGraphModule)
+uv run python app.py                # REST + WhatsApp webhook (needs Postgres for marketplace + WhatsApp env)
+# Docker: app + Postgres + Redis, durable sessions and attachments
+docker compose up --build           # app at http://localhost:8000
 ```
 
-Set `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY` in `.env.local`
-(precedence when several are set: OpenAI, then Gemini, then OpenRouter;
-`AGRIPILOT_MODEL_PROVIDER` forces one). See `.env.local.example` for model
-overrides, guardrail switches, and debug flags.
+`demo.py:5` calls `load_dotenv(".env.local")` **before** importing `agentkernel` — keep that order in new entrypoints. `AK_` env vars override `config.yaml` with `__` nesting (e.g. `AK_GUARDRAIL__INPUT__ENABLED=false`, `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1` dev bypass).
 
-## Tests
+Key `.env.local.example:78` knobs:
 
-Run from this directory (running pytest from the repo root fails — it collects
-the whole monorepo):
+| Var | Purpose |
+|-----|---------|
+| `AK_MARKETPLACE__DATABASE_URL` | `postgresql+psycopg://...` (only runtime backend; compose wires it to the `db` service) |
+| `AK_SESSION__TYPE` / `AK_SESSION__REDIS__URL` | Redis session store (compose sets `redis`; unset = in-memory bare-metal dev) |
+| `AK_MULTIMODAL__STORAGE_TYPE` / `AK_MULTIMODAL__REDIS__URL` | Redis attachment storage so photos survive restarts (unset = in-memory) |
+| `AK_MARKETPLACE__JWT_SECRET` | HS256 secret (fallback `config.yaml:32` dev-only) |
+| `AK_MARKETPLACE__JWT_EXPIRY_HOURS` | default `24` |
+| `AK_MARKETPLACE__SIGNUP_URL` | WhatsApp rejection link (`http://localhost:8000/docs` default) |
+| `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK` | `1` bypasses farmer `active` gate (dev/tests, never prod) |
+| `AK_MARKETPLACE__DEV_USER_ID` | inject marketplace identity into `demo.py` chat without JWT (dev) |
+| `AK_WHATSAPP__ACCESS_TOKEN` / `PHONE_NUMBER_ID` / `VERIFY_TOKEN` / `APP_SECRET` | Cloud API (see `API / WhatsApp` below) |
+| `AGRIPILOT_TOOL_MAX_CALLS` / `AGRIPILOT_TOOL_TIMEOUT_SECONDS` | `tools/tool_guard.py:44` limits |
+
+## Marketplace — Roles & Auth
+
+- **Roles:** `farmer` (sells, WhatsApp+REST, `subscription_status` `active|expired|none`), `buyer` (browses/connects, JWT-only, **no** subscription per 2026-08-25), `admin` via `scripts/seed_admin.py` only.
+- **Phone:** `E.164` `^\+[1-9]\d{7,14}$` (`marketplace/auth.py:25` `normalize_phone` strips spaces/dashes). Farmer may set optional `contact_phone_number` (buyer-facing, fallback to primary `users.phone_number` `marketplace/models.py:48`) — revealed only via `GET .../contact` after `accepted`.
+- **JWT:** `HS256` `Authorization: Bearer <JWT>` (`marketplace/auth.py:75` `create_access_token`, `91` `get_current_user` via `HTTPBearer`). `decode_token` 401 on expired/invalid.
+- **Subscription:** Farmer `active` required for all `/api/farmer/*` (`marketplace/routers/farmer.py:41` `_farmer_active`, `marketplace/auth.py:120` `require_active_subscription`); buyer routes JWT-only (including `POST /buyer/.../connect`). WhatsApp hard gate blocks non-`farmer`/`active` before agent (`whatsapp_handler.py:52` `_handle_webhook`, `_send_whatsapp_text`).
+
+### Quickstart (bash)
 
 ```bash
-OPENAI_API_KEY=sk-dummy uv run pytest          # a dummy key is enough
-uv run pytest -m "not slow"                    # skip weight-download / live-LLM tests
-uv run pytest tests/weather_tool_test.py::<test_name>
+BASE=http://localhost:8000
+# Farmer with buyer-facing contact phone
+curl -s $BASE/api/auth/signup -H 'Content-Type: application/json' \
+  -d '{"role":"farmer","phone_number":"+94770000001","password":"secret123","name":"Amal","district":"Kandy","contact_phone_number":"+94770000901"}'
+curl -s $BASE/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"phone_number":"+94770000001","password":"secret123"}' # -> {access_token}
+F_TOKEN=<jwt>
+
+# Buyer
+curl -s $BASE/api/auth/signup -H 'Content-Type: application/json' \
+  -d '{"role":"buyer","phone_number":"+94770000002","password":"secret123","name":"Nimal","district":"Colombo","business_name":"Shop"}'
+curl -s $BASE/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"phone_number":"+94770000002","password":"secret123"}'
+B_TOKEN=<jwt>
+
+# Me (farmer shows contact_phone)
+curl -s $BASE/api/auth/me -H "Authorization: Bearer $F_TOKEN"
+
+# Farmer CRUD (all require farmer active)
+curl -s $BASE/api/farmer/listings -H "Authorization: Bearer $F_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"crop":"tomato","quantity_kg":500,"price_per_kg":120}'       # 201 {id, crop: "tomato" lowercased}
+curl -s "$BASE/api/farmer/listings?status=active&limit=20&offset=0" -H "Authorization: Bearer $F_TOKEN"
+curl -s -X PATCH $BASE/api/farmer/listings/1 -H "Authorization: Bearer $F_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"status":"sold"}'   # active->sold|expired|cancelled, 400 if sold->active
+curl -s -X DELETE $BASE/api/farmer/listings/1 -H "Authorization: Bearer $F_TOKEN" # 204
 ```
 
-## Weather data
+## Endpoint Reference (26 distinct methods)
 
-Weather forecasts come from [Open-Meteo](https://open-meteo.com) — free for
-non-commercial use, **no API key or signup required** (10,000 requests/day,
-5,000/hour, 600/minute). Place names are resolved via Open-Meteo's geocoding
-endpoint and cached for the process lifetime; forecasts are re-served from a
-short-TTL cache (`AGRIPILOT_WEATHER_CACHE_TTL_MINUTES`, default 60) to stay
-well inside the free-tier limits. On API failure the agent relays an honest
-limitation message instead of guessing conditions. Weather data by
-Open-Meteo.com. See `plan/Open-Meteo.md` for the integration reference.
+**Agent Kernel default** (`ak-py/src/agentkernel/api/http.py:59`, `handler.py:150`, `whatsapp_chat.py:46` — mounted even without `RESTAPI.add_auth_handlers`):
 
-## Knowledge base
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `GET` | `/health` | none | `{"status":"ok"}` |
+| `GET` | `/openapi.json`, `/docs`, `/redoc` | none | FastAPI docs |
+| `GET` | `/api/v1/agents` | none | list (`triage`) |
+| `POST` | `/api/v1/chat` | none | `{"prompt","session_id","agent":"triage"}` → agent reply (JSON) |
+| `POST` | `/api/v1/chat-multipart` | none | `multipart/form-data` + files/images (10 MB `config.yaml:42`) |
+| `GET` | `/whatsapp/webhook?hub.mode&hub.verify_token&hub.challenge` | `AK_WHATSAPP__VERIFY_TOKEN` | returns challenge or 403 |
+| `POST` | `/whatsapp/webhook` | `X-Hub-Signature-256` + farmer `active` gate | dedup `_SEEN_LIMIT=1024`, `{"status":"ok"}` immediately |
 
-After editing files in `data/knowledge_docs/`, rebuild ChromaDB:
+**Marketplace — `RESTAPI.add()` (`app.py:27`, `config.yaml:37` no `/custom` prefix)**
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/auth/signup` | public | `SignupRequest{role,phone_number,password≥8,name,district?,contact_phone_number? (farmer E.164)}` → `201 {id,phone_number,role,subscription_status}`; `409` duplicate; buyer `none`, farmer `active` |
+| `POST` | `/api/auth/login` | public | `LoginRequest{phone_number,password}` → `200 {access_token}`; `401` |
+| `GET` | `/api/auth/me` | `Bearer JWT` | `MeResponse{id,phone_number,role,subscription_status,profile:{district,contact_phone}}` |
+| `POST` | `/api/farmer/listings` | `farmer+active` | `ListingCreate{crop,quantity_kg>0,price_per_kg≥0?,harvest_date?}` → `201 ListingResponse` (crop lowercased) |
+| `GET` | `/api/farmer/listings?status&limit&offset` | `farmer+active` | own `PaginatedListings{items,total,limit,offset}` `created_at DESC` |
+| `PATCH` | `/api/farmer/listings/{id}` | `farmer+active` owner | `ListingUpdate{crop?,quantity_kg?,price_per_kg?,harvest_date?,status?}` → `200` or `404`/`400`/`422` |
+| `DELETE` | `/api/farmer/listings/{id}` | `farmer+active` owner | `204` or `404` |
+| `GET` | `/api/farmer/connections` | `farmer+active` | inbox `[ConnectionWithListingAndBuyer]` (buyer `name,district,business_name`, no `phone_number`) |
+| `PATCH` | `/api/farmer/connections/{id}` | `farmer+active` owner | `{"status":"accepted"\|"declined"\|"completed"}` `200 ConnectionResponse` `422`/`400` terminal/`404` |
+| `GET` | `/api/farmer/connections/{id}/contact` | `farmer+active` owner | `200 ContactResponse{phone_number (buyer primary),listing_id,connection_id,status}` only `accepted`/`completed` else `400` |
+| `GET` | `/api/buyer/listings?crop&district&min_qty&max_price&limit&offset` | `buyer` | active `PaginatedListings` (filters `AND`, `crop` lower, `district` join `farmer_profiles.district` case-insensitive, `price_per_kg` not null, `limit[1,50]`); no phone |
+| `GET` | `/api/buyer/listings/{id}` | `buyer` | active `ListingResponse` or `404` |
+| `GET` | `/api/buyer/match?crop=&quantity_kg=&district=` | `buyer` | ranked `MatchResponse{items:[{listing,score,reason}],query}` (`exact 2`, `same region 1` via `data/districts.json:1` else `0`, `-created_at`, `quantity_kg>=requested` filter then score); `crop` required `422` |
+| `POST` | `/api/buyer/listings/{id}/connect` | `buyer` | `ConnectionCreate{message?≤500}` → `201 ConnectionResponse pending` `409` duplicate pending, `404` inactive, best-effort `marketplace/notifications.py:7` WhatsApp to farmer |
+| `GET` | `/api/buyer/connections` | `buyer` | own `[ConnectionWithListing]` (no phone) |
+| `GET` | `/api/buyer/connections/{id}/contact` | `buyer` owner | `ContactResponse{phone_number (farmer contact_phone or primary),...}` only `accepted`/`completed` |
+
+### Buyer flow curl
 
 ```bash
-uv run python scripts/ingest_knowledge.py
+curl -s "$BASE/api/buyer/listings?crop=tomato&district=Kandy&min_qty=400&max_price=150&limit=20&offset=0" -H "Authorization: Bearer $B_TOKEN"
+curl -s "$BASE/api/buyer/listings/1" -H "Authorization: Bearer $B_TOKEN" # no phone_number in JSON
+curl -s "$BASE/api/buyer/match?crop=tomato&quantity_kg=300&district=Kandy" -H "Authorization: Bearer $B_TOKEN"
+# connect
+curl -s -X POST $BASE/api/buyer/listings/1/connect -H "Authorization: Bearer $B_TOKEN" -H 'Content-Type: application/json' -d '{"message":"need 200kg"}'
+curl -s $BASE/api/buyer/connections -H "Authorization: Bearer $B_TOKEN" # no phone
+curl -s $BASE/api/buyer/connections/1/contact -H "Authorization: Bearer $B_TOKEN" # 400 until accepted
+# farmer accepts
+curl -s -X PATCH $BASE/api/farmer/connections/1 -H "Authorization: Bearer $F_TOKEN" -H 'Content-Type: application/json' -d '{"status":"accepted"}'
+curl -s $BASE/api/buyer/connections/1/contact -H "Authorization: Bearer $B_TOKEN" # 200 {phone_number: "+94770000901"}
+curl -s $BASE/api/farmer/connections/1/contact -H "Authorization: Bearer $F_TOKEN" # buyer primary
+curl -s -X PATCH $BASE/api/farmer/connections/1 -H "Authorization: Bearer $F_TOKEN" -H 'Content-Type: application/json' -d '{"status":"completed"}' # seam for future transactions
+```
+
+Errors: `401` missing/invalid/expired JWT, `403` role (`farmer role required`/`buyer role required`) or `farmer subscription required`/`expired — please renew` (bypass `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1`), `404` not found/hide-owner, `409` `already requested`, `400` invalid transition/terminal, `422` validation.
+
+### Chat (supervisor) marketplace — `tools/marketplace_tools.py:130` (all `@guarded`, `AK_MARKETPLACE__DEV_USER_ID` injection for `demo.py`, WhatsApp `session.id` wa_id fallback via `marketplace/auth.py:25` `normalize_phone`)
+
+Bound to `agents/supervisor.py:29` `LangGraphToolBuilder.bind` (13 tools inc. `get_farmer_context: tools/context_tools.py:16` + `plan_tools` + `_analyze_attachments`). `TRIAGE_INSTRUCTIONS:95` adds: farmer sell (`create_listing_tool`) → confirm ID, farmer `list_my_listings_tool`/`delete_listing_tool`, buyer `browse_listings_tool`/`match_listings_tool` (both `role in {"buyer","farmer"}`, JWT-only), `connect_to_listing_tool` (buyer-only, no phone). `post_model_hook` `agents/supervisor_guardrails.py:47` still sees all tools.
+
+```bash
+# Demo CLI with dev injection (no WhatsApp)
+AK_MARKETPLACE__DEV_USER_ID=1 python demo.py
+# then: "I have 500kg tomatoes at 120/kg to sell" -> create_listing_tool
+# "show my listings" -> list_my_listings_tool
+# "delete listing 2" -> delete_listing_tool
+# buyer: "show me tomato near Kandy" -> browse; "match 200kg tomato Kandy" -> match; "connect to listing 1" -> connect
+
+# REST chat (agent)
+curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' -d '{"prompt":"Show me tomato near Kandy","session_id":"buyer-1","agent":"triage"}'
+```
+
+### Conversation continuity across restarts
+
+Under Docker the same `session_id` survives `docker compose restart app` — sessions, attachments, and case history live in Redis:
+
+```bash
+curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' \
+  -d '{"prompt":"My location is Kandy. My tomato plants were diagnosed with early blight.","session_id":"farmer-1"}'
+docker compose restart app
+curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' \
+  -d '{"prompt":"It is getting worse. What should I do?","session_id":"farmer-1"}'
+# -> reply references tomato / early blight without re-asking
 ```
 
 ## API / WhatsApp
 
-`app.py` serves the Agent Kernel REST API plus the WhatsApp Cloud API webhook,
-and fails fast at startup unless `AK_WHATSAPP__ACCESS_TOKEN`,
-`AK_WHATSAPP__PHONE_NUMBER_ID` and a verify token are set (`config.yaml` holds
-the default `whatsapp.verify_token`; env vars override — see
-`.env.local.example`). The same values are required for `docker compose up`,
-since the container runs `app.py`.
+`app.py:10` `load_dotenv(".env.local")` before `agentkernel` imports, then Alembic migrations run at startup (single schema authority). The explicit handler list mounts **both** the agent REST routes (`AgentRESTRequestHandler` → `/api/v1/*`) and the WhatsApp webhook — dropping one silently removes its routes.
 
-1. Fill the WhatsApp variables in `.env.local`.
-2. Start the server: `uv run python app.py` or `docker compose up --build`.
-3. Expose it publicly: `ngrok http 8000`.
-4. In the Meta app console (developers.facebook.com → WhatsApp → Configuration),
-   set the callback URL to `https://<ngrok-id>/whatsapp/webhook` with the
-   matching verify token, then subscribe to the **messages** field.
-5. Send a message to the test/sandbox number; the reply comes from AgriPilot.
+1. Fill `AK_WHATSAPP__ACCESS_TOKEN`, `PHONE_NUMBER_ID`, `VERIFY_TOKEN` in `.env.local` (and `AK_WHATSAPP__APP_SECRET` if verifying `X-Hub-Signature-256`).
+2. Start: `uv run python app.py` or `docker compose up --build` (health `http://localhost:8000/health`).
+3. Expose: `ngrok http 8000`.
+4. Meta console → WhatsApp → Configuration: callback `https://<ngrok>/whatsapp/webhook`, verify token, subscribe `messages`.
+5. Send to sandbox number — active `farmer` (`users.phone_number` `E.164`, `wa_id` `+` normalized, `role=farmer`, `subscription_status=active`) reaches supervisor; others get `AgriPilot WhatsApp is for active farmer accounts. Sign up at <AK_MARKETPLACE__SIGNUP_URL>.` and **no** LLM call (`whatsapp_handler.py:52`).
+
+## Tests
+
+Run from this directory (repo-root `pytest` collects monorepo and fails):
+
+```bash
+OPENAI_API_KEY=sk-dummy uv run pytest          # dummy key enough (agents/model.py guard)
+uv run pytest -m "not slow"                    # skip weight/LLM (default for iteration)
+uv run pytest tests/weather_tool_test.py::test_name
+OPENAI_API_KEY=sk-dummy uv run pytest tests/whatsapp_fastack_test.py -v  # handler now has _skip_marketplace_gate for dedup tests
+```
+
+`conftest.py:91` stubs `tools/weather_tool.py:1` `_http_get` with canned Open-Meteo payloads. Marketplace tests (`marketplace_auth_test.py`, `marketplace_farmer_listings_test.py`) use in-memory SQLite `StaticPool`; `tests/marketplace_postgres_smoke_test.py` and `tests/redis_session_test.py` run against real Postgres/Redis when reachable (`docker compose up -d db redis`) and skip otherwise. `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1` bypasses farmer gate where noted. `AK_MARKETPLACE__DEV_USER_ID` seeds chat tools in tests.
+
+## Weather & Knowledge
+
+Weather [Open-Meteo](https://open-meteo.com) — no key, **no signup** (10k/d, 5k/h, 600/m), geocode cached, forecast `AGRIPILOT_WEATHER_CACHE_TTL_MINUTES=60`. After editing `data/knowledge_docs/`: `uv run python scripts/ingest_knowledge.py` (rebuilds `data/chroma_db/`, gitignored).
 
 ## Marketplace database
 
-The marketplace (auth, listings, connections) runs on **Postgres only**
-(since Phase 18; driver `psycopg` 3). Schema is versioned with Alembic under
-`migrations/`; `app.py` applies pending migrations automatically at startup
-(equivalent to `uv run python -m alembic upgrade head`). The target URL is
-resolved in this order:
-
-1. `AK_MARKETPLACE__DATABASE_URL` env var
-2. `config.yaml: marketplace.database_url`
-3. default `postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot`
-
-```bash
-# Docker (recommended): brings up a healthy postgres:16 + the app, wired automatically
-docker compose up --build
-
-# Bare metal against your own Postgres
-AK_MARKETPLACE__DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db \
-  uv run python -m alembic upgrade head
-
-# One-shot import of the legacy (Phases 15-17) SQLite data, if data/app.db exists
-AK_MARKETPLACE__DATABASE_URL=postgresql+psycopg://agripilot:agripilot@localhost:5432/agripilot \
-  uv run python scripts/migrate_sqlite_to_postgres.py   # refuses non-empty target unless --force
-```
-
-Tests do not need Postgres or Docker — each test builds its own in-memory
-SQLite engine (`tests/marketplace_postgres_smoke_test.py` additionally runs
-against real Postgres when reachable, and skips otherwise). Keep
-`AK_MARKETPLACE__JWT_SECRET` out of `config.yaml` in any shared deployment;
-set it via environment instead.
+**Postgres-only** since 2026-08-25: driver `psycopg` 3, schema authority is Alembic under `migrations/` (`app.py` startup and `scripts/seed_admin.py` call `marketplace.database.run_migrations()`; never reintroduce `Base.metadata.create_all` as a runtime path). Compose wires `AK_MARKETPLACE__DATABASE_URL` to the `db` service. Tests use per-test in-memory SQLite fixtures — pytest needs no Docker or Postgres. Legacy `data/app.db` is read only by the one-shot `scripts/migrate_sqlite_to_postgres.py`.
 
 ## Status
 
-Phases 0–9 (except 7), 15–18 are complete. Open: Phase 7 (durable memory)
-and Phases 11–13 (hardening incl. human escalation, demo polish). The market
-specialist from Phase 6 was removed on 2026-08-24 — no reliable
-market-price API exists for the target crops and region. The marketplace DB
-moved from SQLite to Postgres-only on 2026-08-25 (Phase 18). Current details:
-`plan/00-main.md`.
+Market specialist removed 2026-08-24 (no reliable API). Durable memory with Redis-backed sessions and attachments, farmer profile/case history, and follow-up resolution — restart continuity verified over REST. Marketplace dual-phone (`contact_phone`) gated reveal `GET .../contact` after `accepted`.
+
