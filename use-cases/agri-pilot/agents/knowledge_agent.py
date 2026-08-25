@@ -16,12 +16,20 @@ from agents.knowledge_guardrails import build_safety_validation_guard
 from agents.model import get_chat_model
 from tools.context_tools import get_farmer_context, update_farmer_context
 from tools.knowledge_tool import retrieve_treatment_info
+from tools.profile_tools import get_farmer_profile, record_case_outcome
 from tools.safety_tool import validate_treatment
 
 model = get_chat_model()
 
 tools = LangGraphToolBuilder.bind(
-    [retrieve_treatment_info, validate_treatment, get_farmer_context, update_farmer_context]
+    [
+        retrieve_treatment_info,
+        validate_treatment,
+        get_farmer_context,
+        update_farmer_context,
+        get_farmer_profile,
+        record_case_outcome,
+    ]
 )
 
 KNOWLEDGE_INSTRUCTIONS = """
@@ -35,11 +43,16 @@ safety validation below.
 
 Call get_farmer_context. You need at least a crop. A disease name (e.g.
 recorded by the vision specialist after a confident diagnosis) makes the
-retrieval specific; region narrows it further if known.
+retrieval specific.
+
+Also call get_farmer_profile: when an earlier case for the same crop and
+disease recorded an advice_summary, take it into account — build on or
+revise that previous advice instead of treating the request as brand new,
+and say how today's guidance relates to it.
 
 ## Step 2: Retrieve
 
-Call retrieve_treatment_info with the crop, and disease/region if known.
+Call retrieve_treatment_info with the crop, and disease if known.
 
 ## Step 3: Validate every candidate treatment
 
@@ -69,7 +82,11 @@ does support.
 ## Step 5: Record context
 
 Call update_farmer_context with the crop (and the disease, if newly
-confirmed) when they are not already recorded.
+confirmed) when they are not already recorded. Then call record_case_outcome
+with the crop, the disease, and a one-or-two sentence advice_summary of the
+recommendation you gave — or of the limitation, when no treatment could be
+validated — so follow-up conversations can build on this episode without
+asking the farmer to repeat anything.
 """
 
 knowledge_agent = create_agent(

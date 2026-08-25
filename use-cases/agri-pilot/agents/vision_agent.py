@@ -11,12 +11,20 @@ from langchain.agents import create_agent
 from agents.model import get_chat_model
 from tools.attachment_tool import get_attachment_path
 from tools.context_tools import get_farmer_context, update_farmer_context
+from tools.profile_tools import record_case_outcome
 from tools.vision_tool import check_image_quality, diagnose_crop_image
 
 model = get_chat_model()
 
 tools = LangGraphToolBuilder.bind(
-    [get_attachment_path, check_image_quality, diagnose_crop_image, get_farmer_context, update_farmer_context]
+    [
+        get_attachment_path,
+        check_image_quality,
+        diagnose_crop_image,
+        get_farmer_context,
+        update_farmer_context,
+        record_case_outcome,
+    ]
 )
 
 CONFIDENCE_THRESHOLD = 0.7
@@ -68,6 +76,11 @@ a confident diagnosis — the diagnosed disease name, so the knowledge
 specialist can retrieve a specific treatment without asking again. If you
 did not reach a confident diagnosis, record the crop only; never record a
 disease name that was not diagnosed.
+
+When you have stated a confident diagnosis, also call record_case_outcome
+with the crop and the diagnosed disease (plus severity, if the farmer
+stated one), so this episode is remembered in future conversations. Never
+record a case without a confident diagnosis.
 """
 
 vision_agent = create_agent(

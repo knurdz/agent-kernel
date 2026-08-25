@@ -15,12 +15,26 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379" # for bare-metal runs and the skip-if-no-Redis tests; safe to drop in prod
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   app:
     build:
       context: .
       dockerfile: deploy/Dockerfile
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -32,10 +46,19 @@ services:
       - AK_MARKETPLACE__DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-agripilot}:${POSTGRES_PASSWORD:-agripilot}@db:5432/${POSTGRES_DB:-agripilot}
       - AK_MARKETPLACE__JWT_SECRET=${AK_MARKETPLACE__JWT_SECRET:-}
       - AK_MARKETPLACE__SIGNUP_URL=${AK_MARKETPLACE__SIGNUP_URL:-http://localhost:8000/docs}
+      # Durable session state + attachment storage (Phase 7.1).
+      - AK_SESSION__TYPE=redis
+      - AK_SESSION__REDIS__URL=redis://redis:6379
+      - AK_MULTIMODAL__STORAGE_TYPE=redis
+      - AK_MULTIMODAL__REDIS__URL=redis://redis:6379
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
+    volumes:
+      - chroma-cache:/root/.cache/chroma # keep the ONNX embedding model across rebuilds
 volumes:
   pgdata:
+  redisdata:
+  chroma-cache:

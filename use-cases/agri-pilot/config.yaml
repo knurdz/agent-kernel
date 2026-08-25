@@ -1,8 +1,14 @@
 # Agent Kernel local development configuration.
 session:
+  # in_memory keeps bare-metal dev and pytest Redis-free; docker-compose
+  # switches to redis via AK_SESSION__TYPE/AK_SESSION__REDIS__URL (Phase 7.1).
   type: in_memory
   cache:
     size: 256
+  redis:
+    prefix: "ak:agripilot:"
+    url: "redis://localhost:6379"
+    ttl: 604800
 
 logging:
   ak:
@@ -14,6 +20,13 @@ multimodal:
   # LiteLLM model strings (called directly, not via langchain)
   description_model: "gemini/gemini-3.1-flash-lite"
   analysis_model: "gemini/gemini-3.1-flash-lite"
+  # in_memory keeps bare-metal dev Redis-free; docker-compose overrides with
+  # AK_MULTIMODAL__STORAGE_TYPE=redis so photo binaries survive restarts.
+  storage_type: in_memory
+  redis:
+    url: "redis://localhost:6379"
+    prefix: "ak:attachments:"
+    ttl: 604800
 
 guardrail:
   input:

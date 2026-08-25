@@ -5,9 +5,12 @@ description = "Agentic AI agricultural assistant for smallholder farmers"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph,multimodal,chromadb,openai,api,whatsapp]>=0.8.1",
+    "agentkernel[cli,langgraph,multimodal,chromadb,openai,api,whatsapp,redis]>=0.8.1",
     # 'openai' extra is for the OpenAI moderation/jailbreak guardrail checks
     # (Increment 4.2), independent of which LLM provider answers requests.
+    # 'redis' extra (Phase 7.1) backs durable session state and multimodal
+    # attachment storage in Docker; bare-metal dev and pytest stay on
+    # in-memory stores via config.yaml defaults.
     # Pinned: langgraph-prebuilt>=1.0.6 imports ExecutionInfo/ServerInfo
     # from langgraph.runtime, which langgraph 1.0.10 does not provide.
     "fastapi>=0.141.1",

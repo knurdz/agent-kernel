@@ -31,6 +31,7 @@ from tools.plan_tools import (
     mark_plan_step,
     set_active_plan,
 )
+from tools.profile_tools import get_farmer_profile, record_case_outcome
 
 model = get_chat_model()
 
@@ -38,6 +39,8 @@ tools = LangGraphToolBuilder.bind(
     [
         get_farmer_context,
         update_farmer_context,
+        get_farmer_profile,
+        record_case_outcome,
         get_active_plan,
         set_active_plan,
         mark_plan_step,
@@ -105,6 +108,19 @@ earlier work — especially CROP_HEALTH after a rejected or unclear photo.
 - Mark steps done with mark_plan_step as they complete. When every step
   is finished the plan clears itself; if the farmer switches to an
   unrelated topic, discard the stale plan with clear_active_plan_tool.
+
+## Step 2b: Resolve references to earlier work
+
+Call get_farmer_profile before asking the farmer to repeat anything. If
+the message refers back to an earlier problem — "it", "the same problem",
+"it is getting worse", "that disease" — resolve the reference to the most
+recent matching case in the profile and continue from it: use the stored
+crop, disease, severity, and previous advice so the farmer never has to
+repeat what AgriPilot already knows. Ask a clarifying question ONLY when
+the reference is genuinely ambiguous (open cases for more than one crop).
+When the farmer confirms an earlier problem is dealt with ("it is gone
+now"), call record_case_outcome with that case's crop and
+follow_up_status "resolved".
 
 ## Step 3: Delegate or answer
 
