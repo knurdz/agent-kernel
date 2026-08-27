@@ -54,7 +54,7 @@ services:
         required: true
     environment:
       AK_MARKETPLACE__DATABASE_URL: postgresql+psycopg://${POSTGRES_USER_ENCODED}:${POSTGRES_PASSWORD_ENCODED}@db:5432/${POSTGRES_DB:-agripilot}
-    command: ["uv", "run", "python", "-m", "alembic", "upgrade", "head"]
+    command: ["python", "-m", "alembic", "upgrade", "head"]
     depends_on:
       db:
         condition: service_healthy
