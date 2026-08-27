@@ -1,5 +1,5 @@
-# Duplicate of the repo-root /.dockerignore (Docker reads .dockerignore from the build context root only).
-# Older Docker Compose versions do not support build.ignore — keep both files in sync.
+# Used by AgriPilot VPS/dev Docker builds (repo-root build context).
+# See use-cases/agri-pilot/deploy/docker-compose.vps.yml
 
 .git/
 **/.venv/
