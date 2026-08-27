@@ -25,6 +25,17 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
 
+urlencode() {
+  local value="$1"
+  python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${value}"
+}
+
+export_compose_db_url_vars() {
+  export POSTGRES_USER_ENCODED="$(urlencode "${POSTGRES_USER}")"
+  export POSTGRES_PASSWORD_ENCODED="$(urlencode "${POSTGRES_PASSWORD}")"
+  export POSTGRES_DB="${POSTGRES_DB:-agripilot}"
+}
+
 compose() {
   docker compose -p "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" "$@"
 }
@@ -33,10 +44,12 @@ load_env() {
   if [[ ! -f "${ENV_FILE}" ]]; then
     die "Missing ${ENV_FILE}. Copy deploy/.env.production.example and fill values, or run: $0 setup"
   fi
+  require_cmd python3
   # shellcheck disable=SC1090
   set -a
   source "${ENV_FILE}"
   set +a
+  export_compose_db_url_vars
 }
 
 random_secret() {
@@ -151,6 +164,10 @@ validate_env() {
     local cred_path="${AK_NOTIFICATIONS__FIREBASE_CREDENTIALS_PATH:-}"
     [[ -n "${cred_path}" ]] || die "AK_NOTIFICATIONS__FIREBASE_CREDENTIALS_PATH is required when FCM is enabled."
     [[ -f "${cred_path}" ]] || die "Firebase credentials file not found: ${cred_path}"
+  fi
+
+  if [[ -n "${AK_MARKETPLACE__DATABASE_URL:-}" ]]; then
+    warn "AK_MARKETPLACE__DATABASE_URL in ${ENV_FILE} is ignored; Compose builds the internal db URL from POSTGRES_*."
   fi
 
   compose config >/dev/null

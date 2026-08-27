@@ -53,7 +53,7 @@ services:
       - path: .env.production
         required: true
     environment:
-      AK_MARKETPLACE__DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agripilot}
+      AK_MARKETPLACE__DATABASE_URL: postgresql+psycopg://${POSTGRES_USER_ENCODED}:${POSTGRES_PASSWORD_ENCODED}@db:5432/${POSTGRES_DB:-agripilot}
     command: ["uv", "run", "python", "-m", "alembic", "upgrade", "head"]
     depends_on:
       db:
@@ -72,7 +72,7 @@ services:
       - path: .env.production
         required: true
     environment:
-      AK_MARKETPLACE__DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agripilot}
+      AK_MARKETPLACE__DATABASE_URL: postgresql+psycopg://${POSTGRES_USER_ENCODED}:${POSTGRES_PASSWORD_ENCODED}@db:5432/${POSTGRES_DB:-agripilot}
       AK_MARKETPLACE__SIGNUP_URL: https://${DOMAIN}/docs
       AK_SESSION__TYPE: redis
       AK_SESSION__REDIS__URL: redis://redis:6379

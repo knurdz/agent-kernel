@@ -24,6 +24,12 @@ fi
 
 log "Validating production compose config with smoke fixture env..."
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  # shellcheck disable=SC1090
+  set -a
+  source "${ENV_FILE}"
+  set +a
+  export POSTGRES_USER_ENCODED="$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${POSTGRES_USER}")"
+  export POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${POSTGRES_PASSWORD}")"
   docker compose -f "${COMPOSE_VPS}" --env-file "${ENV_FILE}" config >/dev/null
   log "Validating smoke override merge..."
   docker compose -f "${COMPOSE_VPS}" -f "${COMPOSE_SMOKE}" --env-file "${ENV_FILE}" config >/dev/null
@@ -40,6 +46,8 @@ if [[ "${1:-}" == "--smoke" ]]; then
   set -a
   source "${ENV_FILE}"
   set +a
+  export POSTGRES_USER_ENCODED="$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${POSTGRES_USER}")"
+  export POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${POSTGRES_PASSWORD}")"
 
   cd "${REPO_ROOT}"
   local_project="agripilot-smoke-$$"
