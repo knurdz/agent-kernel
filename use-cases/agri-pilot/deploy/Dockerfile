@@ -13,10 +13,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # PyPI agentkernel 0.8.1 predates auth.authoriser and mobile thread routes — use monorepo ak-py.
+# --no-deps keeps uv.lock pins (langgraph-prebuilt==1.0.5) from being upgraded by ak-py extras.
 COPY ak-py /deps/ak-py
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python .venv/bin/python --reinstall \
-    -e "/deps/ak-py[cli,langgraph,multimodal,chromadb,openai,api,whatsapp,telegram,redis,thread]"
+    uv pip install --python .venv/bin/python --reinstall --no-deps \
+    -e "/deps/ak-py"
 
 COPY use-cases/agri-pilot /app
 
