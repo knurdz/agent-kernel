@@ -1,0 +1,22 @@
+# Docker build context is the agent-kernel repo root (see deploy/docker-compose.vps.yml).
+# Keep ak-py and agri-pilot; exclude heavy or irrelevant trees from the build context.
+
+.git/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.claude/
+**/.agents/
+**/node_modules/
+docs/
+e2e/
+ak-deployment/
+examples/
+use-cases/*/mobile/
+use-cases/agri-pilot/data/chroma_db/
+use-cases/agri-pilot/data/app.db*
+use-cases/agri-pilot/deploy/backups/
+use-cases/agri-pilot/deploy/.deploy-state/
+use-cases/agri-pilot/deploy/.env.production
+use-cases/agri-pilot/.env.local

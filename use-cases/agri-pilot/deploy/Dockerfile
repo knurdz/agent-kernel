@@ -8,14 +8,20 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
+COPY use-cases/agri-pilot/pyproject.toml use-cases/agri-pilot/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
-COPY . .
+# PyPI agentkernel 0.8.1 predates auth.authoriser and mobile thread routes — use monorepo ak-py.
+COPY ak-py /deps/ak-py
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python .venv/bin/python --reinstall \
+    -e "/deps/ak-py[cli,langgraph,multimodal,chromadb,openai,api,whatsapp,telegram,redis,thread]"
+
+COPY use-cases/agri-pilot /app
 
 # Bake verified knowledge into the image so production does not depend on a runtime ingest step.
-RUN uv run python scripts/ingest_knowledge.py
+RUN .venv/bin/python scripts/ingest_knowledge.py
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     UV_NO_SYNC=1 \

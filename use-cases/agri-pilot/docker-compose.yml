@@ -29,8 +29,9 @@ services:
 
   app:
     build:
-      context: .
-      dockerfile: deploy/Dockerfile
+      context: ../..
+      dockerfile: use-cases/agri-pilot/deploy/Dockerfile
+      ignore: deploy/docker-build.dockerignore
     depends_on:
       db:
         condition: service_healthy

@@ -47,8 +47,9 @@ services:
 
   migrate:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: ../../..
+      dockerfile: use-cases/agri-pilot/deploy/Dockerfile
+      ignore: docker-build.dockerignore
     env_file:
       - path: .env.production
         required: true
@@ -65,8 +66,9 @@ services:
 
   app:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: ../../..
+      dockerfile: use-cases/agri-pilot/deploy/Dockerfile
+      ignore: docker-build.dockerignore
     restart: unless-stopped
     env_file:
       - path: .env.production
