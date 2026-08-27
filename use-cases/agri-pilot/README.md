@@ -48,6 +48,7 @@ Key `.env.local.example:78` knobs:
 | `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK` | `1` bypasses farmer `active` gate (dev/tests, never prod) |
 | `AK_MARKETPLACE__DEV_USER_ID` | inject marketplace identity into `demo.py` chat without JWT (dev) |
 | `AK_WHATSAPP__ACCESS_TOKEN` / `PHONE_NUMBER_ID` / `VERIFY_TOKEN` / `APP_SECRET` | Cloud API (see `API / WhatsApp` below) |
+| `AK_TELEGRAM__BOT_TOKEN` / `AK_TELEGRAM__WEBHOOK_SECRET` | Telegram Bot API — token from @BotFather; secret echoed back as `X-Telegram-Bot-Api-Secret-Token` (see `API / Telegram`) |
 | `AGRIPILOT_TOOL_MAX_CALLS` / `AGRIPILOT_TOOL_TIMEOUT_SECONDS` | `tools/tool_guard.py:44` limits |
 
 ## Marketplace — Roles & Auth
@@ -55,7 +56,7 @@ Key `.env.local.example:78` knobs:
 - **Roles:** `farmer` (sells, WhatsApp+REST, `subscription_status` `active|expired|none`), `buyer` (browses/connects, JWT-only, **no** subscription per 2026-08-25), `admin` via `scripts/seed_admin.py` only.
 - **Phone:** `E.164` `^\+[1-9]\d{7,14}$` (`marketplace/auth.py:25` `normalize_phone` strips spaces/dashes). Farmer may set optional `contact_phone_number` (buyer-facing, fallback to primary `users.phone_number` `marketplace/models.py:48`) — revealed only via `GET .../contact` after `accepted`.
 - **JWT:** `HS256` `Authorization: Bearer <JWT>` (`marketplace/auth.py:75` `create_access_token`, `91` `get_current_user` via `HTTPBearer`). `decode_token` 401 on expired/invalid.
-- **Subscription:** Farmer `active` required for all `/api/farmer/*` (`marketplace/routers/farmer.py:41` `_farmer_active`, `marketplace/auth.py:120` `require_active_subscription`); buyer routes JWT-only (including `POST /buyer/.../connect`). WhatsApp hard gate blocks non-`farmer`/`active` before agent (`whatsapp_handler.py:52` `_handle_webhook`, `_send_whatsapp_text`).
+- **Subscription:** Farmer `active` required for all `/api/farmer/*` (`marketplace/routers/farmer.py:41` `_farmer_active`, `marketplace/auth.py:120` `require_active_subscription`); buyer routes JWT-only (including `POST /buyer/.../connect`). WhatsApp hard gate blocks non-`farmer`/`active` before agent (`whatsapp_handler.py:52` `_handle_webhook`, `_send_whatsapp_text`); the Telegram hard gate does the same by linked `users.telegram_chat_id` (`telegram_handler.py`, see `API / Telegram`).
 
 ### Quickstart (bash)
 
@@ -100,6 +101,7 @@ curl -s -X DELETE $BASE/api/farmer/listings/1 -H "Authorization: Bearer $F_TOKEN
 | `POST` | `/api/v1/chat-multipart` | none | `multipart/form-data` + files/images (10 MB `config.yaml:42`) |
 | `GET` | `/whatsapp/webhook?hub.mode&hub.verify_token&hub.challenge` | `AK_WHATSAPP__VERIFY_TOKEN` | returns challenge or 403 |
 | `POST` | `/whatsapp/webhook` | `X-Hub-Signature-256` + farmer `active` gate | dedup `_SEEN_LIMIT=1024`, `{"status":"ok"}` immediately |
+| `POST` | `/telegram/webhook` | `X-Telegram-Bot-Api-Secret-Token` == `AK_TELEGRAM__WEBHOOK_SECRET` + farmer gate via `users.telegram_chat_id` | update-ID dedup, `{"ok":true}` immediately; unlinked chats get contact-share link keyboard |
 
 **Marketplace — `RESTAPI.add()` (`app.py:27`, `config.yaml:37` no `/custom` prefix)**
 
@@ -180,6 +182,17 @@ curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' \
 4. Meta console → WhatsApp → Configuration: callback `https://<ngrok>/whatsapp/webhook`, verify token, subscribe `messages`.
 5. Send to sandbox number — active `farmer` (`users.phone_number` `E.164`, `wa_id` `+` normalized, `role=farmer`, `subscription_status=active`) reaches supervisor; others get `AgriPilot WhatsApp is for active farmer accounts. Sign up at <AK_MARKETPLACE__SIGNUP_URL>.` and **no** LLM call (`whatsapp_handler.py:52`).
 
+## API / Telegram
+
+Same server as REST + WhatsApp (`telegram_handler.py` `GatedTelegramHandler`, subclass of Agent Kernel's `AgentTelegramRequestHandler`). The stock handler already fast-acks (Starlette `BackgroundTasks`) and supports photos/documents/captions for vision; the subclass adds update-ID dedup (`update_id`, `_SEEN_LIMIT=1024`) and the farmer-only hard gate.
+
+1. Create a bot: Telegram → `@BotFather` → `/newbot`; copy the 46-char token into `AK_TELEGRAM__BOT_TOKEN`. Pick any random string for `AK_TELEGRAM__WEBHOOK_SECRET`.
+2. Start `uv run python app.py` behind ngrok, then register the webhook once:
+   `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<ngrok>/telegram/webhook&secret_token=<WEBHOOK_SECRET>` — verify with `getWebhookInfo`. Webhook and `getUpdates` polling are mutually exclusive.
+3. **Linking:** an unlinked chat gets a contact-share keyboard; tapping it sends the farmer's real phone number, which is E.164-normalized and matched against `users.phone_number`. Only `role=farmer` + `subscription_status=active` accounts link — the chat ID is stored in `users.telegram_chat_id` (nullable unique, migration `b4e8f1a2c7d9`) and every later message is gated on it. Non-farmers/inactive subscriptions get the signup notice, never an LLM call. Forwarded contacts (`contact.user_id != from.id`) are rejected.
+4. Sessions key on Telegram `chat_id` — case history is per-channel (not shared with the WhatsApp wa_id session) for now.
+5. Rate limits: ~30 msgs/sec globally, ~1/sec per chat — bursts may see Telegram 429s with `retry_after`.
+
 ## Tests
 
 Run from this directory (repo-root `pytest` collects monorepo and fails):
@@ -189,6 +202,7 @@ OPENAI_API_KEY=sk-dummy uv run pytest          # dummy key enough (agents/model.
 uv run pytest -m "not slow"                    # skip weight/LLM (default for iteration)
 uv run pytest tests/weather_tool_test.py::test_name
 OPENAI_API_KEY=sk-dummy uv run pytest tests/whatsapp_fastack_test.py -v  # handler now has _skip_marketplace_gate for dedup tests
+OPENAI_API_KEY=sk-dummy uv run pytest tests/telegram_fastack_test.py tests/telegram_gate_test.py -v  # Telegram dedup + gate/linking (AK_TELEGRAM__BOT_TOKEN=dummy set in-file)
 ```
 
 `conftest.py:91` stubs `tools/weather_tool.py:1` `_http_get` with canned Open-Meteo payloads. Marketplace tests (`marketplace_auth_test.py`, `marketplace_farmer_listings_test.py`) use in-memory SQLite `StaticPool`; `tests/marketplace_postgres_smoke_test.py` and `tests/redis_session_test.py` run against real Postgres/Redis when reachable (`docker compose up -d db redis`) and skip otherwise. `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1` bypasses farmer gate where noted. `AK_MARKETPLACE__DEV_USER_ID` seeds chat tools in tests.

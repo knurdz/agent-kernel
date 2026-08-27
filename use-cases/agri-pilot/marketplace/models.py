@@ -5,7 +5,20 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime, timezone
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from marketplace.database import Base
@@ -56,6 +69,11 @@ class User(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    # Telegram linking (contact-share flow): chat_id of the linked bot chat.
+    # BigInteger — Telegram IDs are not guaranteed to fit int32. Nullable until
+    # the farmer shares their contact with the bot; unique so one chat maps to
+    # one account and a claimed chat cannot be re-linked elsewhere.
+    telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True, index=True)
 
     farmer_profile: Mapped[FarmerProfile | None] = relationship(
         "FarmerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"

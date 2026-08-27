@@ -82,7 +82,14 @@ match the `openai-guardrails` `PipelineBundles` schema:
 ## Codebase map
 
 - `demo.py` — CLI entry point; registers `LangGraphModule([triage_agent])`.
-- `app.py` — FastAPI entry point.
+- `app.py` — FastAPI entry point; mounts REST + WhatsApp + Telegram webhooks.
+- `telegram_handler.py` — `GatedTelegramHandler` (subclass of Agent Kernel's
+  `AgentTelegramRequestHandler`): update-ID dedup plus the farmer-only hard gate.
+  Telegram has no phone identity, so first-time linking is a contact-share button
+  (`request_contact`): the shared number is E.164-normalized, matched against
+  `users.phone_number`, and only farmer+active accounts get their chat id stored in
+  `users.telegram_chat_id` (nullable unique, migration `b4e8f1a2c7d9`). Env:
+  `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET`.
 - `agents/supervisor.py` — langgraph_supervisor triage agent routing to three specialists:
   `vision_agent`, `knowledge_agent`, `resource_agent`. Triage rules live
   in its `TRIAGE_INSTRUCTIONS` prompt, including vision→knowledge chaining within one turn.

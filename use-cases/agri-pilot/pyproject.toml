@@ -5,7 +5,7 @@ description = "Agentic AI agricultural assistant for smallholder farmers"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph,multimodal,chromadb,openai,api,whatsapp,redis]>=0.8.1",
+    "agentkernel[cli,langgraph,multimodal,chromadb,openai,api,whatsapp,telegram,redis]>=0.8.1",
     # 'openai' extra is for the OpenAI moderation/jailbreak guardrail checks
     # (Increment 4.2), independent of which LLM provider answers requests.
     # 'redis' extra (Phase 7.1) backs durable session state and multimodal

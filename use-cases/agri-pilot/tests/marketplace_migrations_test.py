@@ -55,6 +55,8 @@ def test_upgrade_head_creates_marketplace_schema(tmp_path):
     assert EXPECTED_TABLES <= _user_tables(engine)
     # The Phase 17 hot-patched column must be part of the baseline revision.
     assert "contact_phone" in _table_columns(engine, "farmer_profiles")
+    # Telegram linking column (contact-share flow) added in b4e8f1a2c7d9.
+    assert "telegram_chat_id" in _table_columns(engine, "users")
     engine.dispose()
 
 

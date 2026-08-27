@@ -57,3 +57,9 @@ test:
 whatsapp:
   agent: triage
   verify_token: "agripilot-local-verify"
+
+# Bot token and webhook secret come from env (AK_TELEGRAM__BOT_TOKEN /
+# AK_TELEGRAM__WEBHOOK_SECRET); see .env.local.example and README.md
+# "API / Telegram".
+telegram:
+  agent: triage
