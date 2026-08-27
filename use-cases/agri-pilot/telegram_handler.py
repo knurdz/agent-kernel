@@ -20,10 +20,14 @@ two gaps this subclass closes, mirroring ``whatsapp_handler.py``:
 import json
 import logging
 import os
+import traceback
 from collections import OrderedDict
 
+from agentkernel.core.model import AgentRequestText, BaseChatRequest
 from agentkernel.telegram import AgentTelegramRequestHandler
 from sqlalchemy.exc import IntegrityError
+
+from marketplace.session_identity import canonical_session_id, seed_marketplace_session
 
 
 class GatedTelegramHandler(AgentTelegramRequestHandler):
@@ -213,6 +217,11 @@ class GatedTelegramHandler(AgentTelegramRequestHandler):
             await self._delegate(body)
             return
 
+        # Mobile deep-link token linking (/start <token>)
+        if message is not None and isinstance(message.get("text"), str) and message["text"].startswith("/start "):
+            if await self._try_link_via_start_token(message):
+                return
+
         try:
             from sqlalchemy import select
 
@@ -248,3 +257,94 @@ class GatedTelegramHandler(AgentTelegramRequestHandler):
     async def _delegate(self, body: dict) -> None:
         """Hand a passing update to the stock pipeline (seam for tests)."""
         await super()._process_webhook_body(body)
+
+    async def _process_agent_message(self, chat_id: int, message_text: str, message: dict | None = None):
+        """Process message through agent with unified session id when linked farmer."""
+        from agentkernel.core.model import AgentRequestText
+
+        farmer = None
+        try:
+            from sqlalchemy import select
+
+            from marketplace.models import User
+
+            db = self._open_db()
+            try:
+                farmer = db.scalars(select(User).where(User.telegram_chat_id == int(chat_id))).first()
+            finally:
+                db.close()
+        except Exception:
+            farmer = None
+
+        if farmer and self._eligible(farmer):
+            session_id = canonical_session_id(farmer.id)
+            acting_user = str(farmer.id)
+        else:
+            session_id = str(chat_id)
+            acting_user = str((message or {}).get("from", {}).get("id") or chat_id)
+
+        sender_id = (message or {}).get("from", {}).get("id")
+        try:
+            await self._send_chat_action(chat_id, "typing")
+            requests = []
+            if message_text:
+                requests.append(AgentRequestText(prompt=message_text))
+            if message:
+                failed_files = await self._process_files(message, requests)
+                if failed_files:
+                    self._gate_log.warning("Failed to process files: %s", failed_files)
+            if not requests:
+                await self._send_message(chat_id, "Sorry, your message appears to be empty.")
+                return
+            req = BaseChatRequest(
+                prompt=message_text,
+                agent=self._telegram_agent,
+                session_id=session_id,
+                user_id=acting_user,
+            )
+            try:
+                result, loaded_sid = await self._chat_service.execute(req, requests=requests)
+            except ValueError as ve:
+                self._gate_log.warning("Agent execution rejected: %s (session_id: %s)", ve, session_id)
+                await self._send_message(chat_id, "Sorry, no agent is available to handle your request.")
+                return
+            if farmer and self._eligible(farmer):
+                try:
+                    from agentkernel.core.runtime import Runtime
+
+                    runtime = Runtime.current()
+                    session = runtime.sessions().load(loaded_sid or session_id)
+                    if session is not None:
+                        seed_marketplace_session(session, farmer)
+                        await runtime.sessions().store(session)
+                except Exception:
+                    pass
+            await self._send_message(chat_id, str(result))
+        except Exception as exc:  # noqa: BLE001
+            self._gate_log.error("Error handling message: %s\n%s", exc, traceback.format_exc())
+            await self._send_message(chat_id, "Sorry, there was an error processing your request.")
+
+    async def _try_link_via_start_token(self, message: dict) -> bool:
+        """Link farmer account when user sends /start <token> from mobile deep link."""
+        text = (message.get("text") or "").strip()
+        if not text.startswith("/start"):
+            return False
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return False
+        token = parts[1].strip()
+        chat_id = (message.get("chat") or {}).get("id")
+        if chat_id is None:
+            return False
+        try:
+            from marketplace.channels import consume_telegram_link_token
+
+            user = consume_telegram_link_token(token, int(chat_id))
+            if user:
+                await self._send_message(chat_id, f"Telegram linked to your AgriPilot account, {user.name}!")
+                return True
+            await self._send_message(chat_id, "That link is invalid or expired. Generate a new link in the app.")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._gate_log.warning("Telegram token link failed chat=%s: %s", chat_id, exc)
+            return False

@@ -10,3 +10,9 @@ plan/
 data/chroma_db/
 data/app.db
 data/app.db-*
+deploy/.env.production
+deploy/.deploy-state/
+deploy/backups/
+deploy/caddy-data/
+**/firebase-credentials*.json
+**/service-account*.json

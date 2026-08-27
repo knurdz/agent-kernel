@@ -206,3 +206,80 @@ class ContactResponse(BaseModel):
     listing_id: int
     connection_id: int
     status: str
+
+
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    location: Optional[str] = Field(default=None, max_length=120)
+    district: Optional[str] = Field(default=None, max_length=120)
+    preferred_language: Optional[str] = Field(default=None, max_length=20)
+    business_name: Optional[str] = Field(default=None, max_length=120)
+    contact_phone_number: Optional[str] = Field(default=None, max_length=20)
+
+    @field_validator("contact_phone_number")
+    @classmethod
+    def validate_contact_phone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        norm = re.sub(r"[\s\-\(\)]", "", v.strip())
+        if not norm:
+            return None
+        if not PHONE_RE.match(norm):
+            raise ValueError("contact_phone_number must be E.164")
+        return norm
+
+
+class TelegramChannelStatus(BaseModel):
+    linked: bool
+    eligible: bool
+
+
+class WhatsAppChannelStatus(BaseModel):
+    eligible: bool
+    linked_by_phone: bool
+
+
+class ChannelsResponse(BaseModel):
+    telegram: TelegramChannelStatus
+    whatsapp: WhatsAppChannelStatus
+
+
+class TelegramLinkTokenResponse(BaseModel):
+    token: str
+    deep_link_url: str
+    expires_in_minutes: int
+
+
+class PublicConfigResponse(BaseModel):
+    whatsapp_display_number: Optional[str] = None
+    whatsapp_wa_me: Optional[str] = None
+    telegram_bot_username: Optional[str] = None
+    telegram_deep_link_base: Optional[str] = None
+    signup_url: Optional[str] = None
+
+
+class DeviceRegisterRequest(BaseModel):
+    fcm_token: str = Field(min_length=10, max_length=512)
+    platform: str = Field(default="android", max_length=32)
+
+
+class DeviceResponse(BaseModel):
+    id: int
+    platform: str
+    active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    push_enabled: Optional[bool] = None
+    whatsapp_enabled: Optional[bool] = None
+    connection_updates: Optional[bool] = None
+
+
+class NotificationPreferencesResponse(BaseModel):
+    push_enabled: bool
+    whatsapp_enabled: bool
+    connection_updates: bool
+
+    model_config = {"from_attributes": True}

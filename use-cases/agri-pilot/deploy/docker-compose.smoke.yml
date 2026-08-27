@@ -1,0 +1,8 @@
+# Local smoke-test override: skip Caddy/Let's Encrypt and expose the app on localhost only.
+services:
+  caddy:
+    profiles: ["never"]
+
+  app:
+    ports:
+      - "127.0.0.1:${SMOKE_APP_PORT:-18000}:8000"

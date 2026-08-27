@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -82,6 +83,10 @@ class User(Base):
         "BuyerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     listings: Mapped[list[Listing]] = relationship("Listing", back_populates="farmer", cascade="all, delete-orphan")
+    devices: Mapped[list[UserDevice]] = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan")
+    notification_preferences: Mapped[NotificationPreference | None] = relationship(
+        "NotificationPreference", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class FarmerProfile(Base):
@@ -166,3 +171,45 @@ class ConnectionRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
+
+
+class TelegramLinkToken(Base):
+    __tablename__ = "telegram_link_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
+class UserDevice(Base):
+    __tablename__ = "user_devices"
+    __table_args__ = (Index("ix_user_devices_user_active", "user_id", "active"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    fcm_token: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, default="android")
+    active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="devices")
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    push_enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    whatsapp_enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    connection_updates: Mapped[bool] = mapped_column(nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="notification_preferences")

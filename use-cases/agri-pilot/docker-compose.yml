@@ -51,6 +51,8 @@ services:
       - AK_SESSION__REDIS__URL=redis://redis:6379
       - AK_MULTIMODAL__STORAGE_TYPE=redis
       - AK_MULTIMODAL__REDIS__URL=redis://redis:6379
+      - AK_THREAD__TYPE=redis
+      - AK_THREAD__REDIS__URL=redis://redis:6379
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

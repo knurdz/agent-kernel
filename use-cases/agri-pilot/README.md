@@ -31,7 +31,26 @@ python demo.py                      # CLI (LangGraphModule)
 uv run python app.py                # REST + WhatsApp webhook (needs Postgres for marketplace + WhatsApp env)
 # Docker: app + Postgres + Redis, durable sessions and attachments
 docker compose up --build           # app at http://localhost:8000
+# Android mobile app (see mobile/README.md)
+cd mobile && flutter pub get && flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
 ```
+
+## Mobile app (Android)
+
+The Flutter client lives in [`mobile/`](mobile/). It uses **JWT-authenticated** agent chat (`POST /api/v1/chat*`), thread history (`GET /api/v1/threads*`), marketplace REST, profile/channel management, and optional FCM push. Unified agent sessions use `agri:user:{user_id}` across mobile, WhatsApp, and Telegram.
+
+New API surfaces (mobile):
+
+| Method | Path | Auth |
+|--------|------|------|
+| `PATCH` | `/api/auth/me` | JWT |
+| `GET` | `/api/auth/me/channels` | JWT |
+| `POST` | `/api/auth/me/channels/telegram/link-token` | JWT farmer |
+| `DELETE` | `/api/auth/me/channels/telegram` | JWT farmer |
+| `GET` | `/api/config/public` | public |
+| `POST` | `/api/devices/register` | JWT |
+| `DELETE` | `/api/devices/unregister` | JWT |
+| `GET/PATCH` | `/api/devices/notification-preferences` | JWT |
 
 `demo.py:5` calls `load_dotenv(".env.local")` **before** importing `agentkernel` — keep that order in new entrypoints. `AK_` env vars override `config.yaml` with `__` nesting (e.g. `AK_GUARDRAIL__INPUT__ENABLED=false`, `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1` dev bypass).
 
@@ -218,4 +237,93 @@ Weather [Open-Meteo](https://open-meteo.com) — no key, **no signup** (10k/d, 5
 ## Status
 
 Market specialist removed 2026-08-24 (no reliable API). Durable memory with Redis-backed sessions and attachments, farmer profile/case history, and follow-up resolution — restart continuity verified over REST. Marketplace dual-phone (`contact_phone`) gated reveal `GET .../contact` after `accepted`.
+
+## VPS deployment (production)
+
+Production stack: **Caddy** (automatic HTTPS on 80/443) → **app** (Agent Kernel REST + agent runner) → **Postgres 16** + **Redis 7** on a private Docker network. Only Caddy is public; database and Redis ports are not published.
+
+### Prerequisites
+
+- Ubuntu 22.04 or 24.04 VPS with SSH access
+- DNS `A`/`AAAA` record for your domain pointing at the VPS **before** the first deploy (Let's Encrypt validation)
+- Firewall: allow inbound **22**, **80**, **443** only
+- Meta WhatsApp Cloud API + Telegram bot credentials
+- One LLM provider API key
+
+### One-command deploy (fresh VPS)
+
+```bash
+export REPO_URL=https://github.com/yaalalabs/agent-kernel.git
+export BRANCH=main
+export INSTALL_DIR=/opt/agent-kernel
+
+curl -fsSL https://raw.githubusercontent.com/yaalalabs/agent-kernel/main/use-cases/agri-pilot/deploy/deploy-vps.sh \
+  | bash -s -- setup   # optional if you prefer copying deploy/.env.production.example manually
+
+# After editing deploy/.env.production on the server:
+bash /opt/agent-kernel/use-cases/agri-pilot/deploy/deploy-vps.sh deploy
+```
+
+Or clone first, then deploy from the repo:
+
+```bash
+git clone --branch main https://github.com/yaalalabs/agent-kernel.git /opt/agent-kernel
+cd /opt/agent-kernel/use-cases/agri-pilot
+cp deploy/.env.production.example deploy/.env.production
+chmod 600 deploy/.env.production
+# fill DOMAIN, LLM, WhatsApp, Telegram, and strong secrets
+./deploy/deploy-vps.sh deploy
+```
+
+First run of `./deploy/deploy-vps.sh setup` generates strong JWT/Postgres/WhatsApp-verify/Telegram-webhook secrets into `deploy/.env.production` (mode `600`). The script **never prints secret values** and **never overwrites** an existing populated env file.
+
+### Update workflow
+
+From the AgriPilot directory on the VPS:
+
+```bash
+cd /opt/agent-kernel/use-cases/agri-pilot
+./deploy/deploy-vps.sh deploy
+```
+
+The script fast-forwards the configured Git branch, rebuilds the app image, runs `alembic upgrade head`, restarts services, and probes `https://<DOMAIN>/health`. Named volumes (Postgres, Redis, Caddy certs, Chroma cache) are retained across redeploys.
+
+### Operations
+
+| Command | Purpose |
+|---------|---------|
+| `./deploy/deploy-vps.sh status` | Container status + public `/health` probe |
+| `./deploy/deploy-vps.sh logs [service]` | Follow logs (`db`, `redis`, `app`, `caddy`, …) |
+| `./deploy/deploy-vps.sh restart` | Restart app + Caddy |
+| `./deploy/deploy-vps.sh backup` | Timestamped Postgres dump under `deploy/backups/` |
+| `./deploy/deploy-vps.sh restore <file.sql.gz>` | Destructive DB restore (requires typing `restore`) |
+| `./deploy/validate-deploy.sh` | `bash -n`, optional ShellCheck, compose config validation |
+| `./deploy/validate-deploy.sh --smoke` | Local build + migration + `/health` without Caddy/LLM calls |
+
+### Webhooks
+
+After a successful deploy the script registers Telegram:
+
+- Webhook URL: `https://<DOMAIN>/telegram/webhook`
+- Secret: `AK_TELEGRAM__WEBHOOK_SECRET` from `deploy/.env.production`
+
+WhatsApp Meta console (manual):
+
+- Callback URL: `https://<DOMAIN>/whatsapp/webhook`
+- Verify token: `AK_WHATSAPP__VERIFY_TOKEN`
+- Subscribe to `messages`
+
+Mobile release builds must use HTTPS — see [`mobile/README.md`](mobile/README.md).
+
+### Files
+
+| Path | Role |
+|------|------|
+| `deploy/docker-compose.vps.yml` | Production Compose stack |
+| `deploy/Caddyfile` | Automatic HTTPS reverse proxy |
+| `deploy/Dockerfile` | Hardened app image (non-root, baked knowledge ingest) |
+| `deploy/.env.production.example` | Documented env template (no secrets) |
+| `deploy/.env.production` | Real production secrets (gitignored, mode `600`) |
+| `deploy/deploy-vps.sh` | Idempotent deploy + operations |
+| `deploy/backups/` | Postgres dumps (gitignored) |
 

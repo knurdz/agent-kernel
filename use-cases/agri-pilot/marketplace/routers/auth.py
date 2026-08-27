@@ -7,9 +7,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from marketplace.auth import create_access_token, get_current_user, hash_password, normalize_phone, verify_password
+from marketplace.channels import (
+    create_telegram_link_token,
+    unlink_telegram,
+)
 from marketplace.database import get_db
 from marketplace.models import BuyerProfile, FarmerProfile, User
-from marketplace.schemas import LoginRequest, MeResponse, ProfileOut, SignupRequest, TokenResponse
+from marketplace.schemas import (
+    ChannelsResponse,
+    LoginRequest,
+    MeResponse,
+    ProfileOut,
+    ProfileUpdate,
+    SignupRequest,
+    TelegramChannelStatus,
+    TelegramLinkTokenResponse,
+    TokenResponse,
+    WhatsAppChannelStatus,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -108,3 +123,70 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
         created_at=user.created_at,
         profile=profile,
     )
+
+
+@router.patch("/me", response_model=MeResponse)
+def update_me(
+    payload: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.name is not None:
+        user.name = payload.name
+    if user.role == "farmer":
+        if user.farmer_profile is None:
+            db.add(FarmerProfile(user_id=user.id))
+            db.flush()
+        fp = user.farmer_profile
+        if payload.location is not None:
+            fp.location = payload.location
+        if payload.district is not None:
+            fp.district = payload.district
+        if payload.preferred_language is not None:
+            fp.preferred_language = payload.preferred_language
+        if payload.contact_phone_number is not None:
+            fp.contact_phone = normalize_phone(payload.contact_phone_number) if payload.contact_phone_number else None
+    elif user.role == "buyer":
+        if user.buyer_profile is None:
+            db.add(BuyerProfile(user_id=user.id))
+            db.flush()
+        bp = user.buyer_profile
+        if payload.business_name is not None:
+            bp.business_name = payload.business_name
+        if payload.location is not None:
+            bp.location = payload.location
+        if payload.district is not None:
+            bp.district = payload.district
+    db.commit()
+    db.refresh(user)
+    return me(user=user, db=db)
+
+
+@router.get("/me/channels", response_model=ChannelsResponse)
+def get_channels(user: User = Depends(get_current_user)):
+    farmer_active = user.role == "farmer" and user.subscription_status == "active"
+    return ChannelsResponse(
+        telegram=TelegramChannelStatus(linked=user.telegram_chat_id is not None, eligible=farmer_active),
+        whatsapp=WhatsAppChannelStatus(eligible=farmer_active, linked_by_phone=farmer_active),
+    )
+
+
+@router.post("/me/channels/telegram/link-token", response_model=TelegramLinkTokenResponse)
+def telegram_link_token(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "farmer":
+        raise HTTPException(status_code=403, detail="farmer role required")
+    if user.subscription_status != "active":
+        raise HTTPException(status_code=403, detail="farmer subscription required")
+    _raw, url = create_telegram_link_token(db, user)
+    import os
+
+    ttl = int(os.environ.get("AK_CHANNELS__TELEGRAM_LINK_TTL_MINUTES", "15") or 15)
+    return TelegramLinkTokenResponse(token=_raw, deep_link_url=url, expires_in_minutes=ttl)
+
+
+@router.delete("/me/channels/telegram", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_telegram_channel(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "farmer":
+        raise HTTPException(status_code=403, detail="farmer role required")
+    unlink_telegram(db, user)
+    return None

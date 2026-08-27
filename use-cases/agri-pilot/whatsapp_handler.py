@@ -13,10 +13,14 @@ are ignored even if they slip past the timeout window.
 import asyncio
 import logging
 import os
+import traceback
 from collections import OrderedDict
 
+from agentkernel.core.model import AgentRequestFile, AgentRequestImage, AgentRequestText, BaseChatRequest
 from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 from fastapi import HTTPException, Request
+
+from marketplace.session_identity import canonical_session_id, seed_marketplace_session
 
 
 class FastAckWhatsAppHandler(AgentWhatsAppRequestHandler):
@@ -185,3 +189,164 @@ class FastAckWhatsAppHandler(AgentWhatsAppRequestHandler):
             await self._handle_message(message, value)
         except Exception:  # noqa: BLE001 - background task must never crash the server
             self._log.exception(f"Background processing failed for message {message.get('id')}")
+
+    def _lookup_active_farmer(self, wa_id: str | None):
+        if not wa_id:
+            return None
+        try:
+            raw = str(wa_id).strip()
+            if not raw.startswith("+"):
+                raw = "+" + raw.lstrip("+")
+            from marketplace.auth import normalize_phone
+            from sqlalchemy import select
+
+            from marketplace.database import SessionLocal
+            from marketplace.models import User
+
+            normalized = normalize_phone(raw)
+            db = SessionLocal()
+            try:
+                user = db.scalars(select(User).where(User.phone_number == normalized)).first()
+            finally:
+                db.close()
+            if user and user.role == "farmer" and user.subscription_status == "active":
+                return user
+        except Exception:
+            return None
+        return None
+
+    async def _handle_message(self, message: dict, value: dict):
+        """Handle WhatsApp message with unified agri:user:{id} session when farmer matched."""
+        message_id = message.get("id")
+        from_number = message.get("from")
+        message_type = message.get("type")
+
+        if not from_number or not message_id:
+            self._log.warning("Message missing required fields (from/id)")
+            return
+
+        self._log.debug("Processing message %s from %s of type %s", message_id, from_number, message_type)
+        requests = []
+        text = None
+        if message_type == "text":
+            text = message.get("text", {}).get("body")
+        elif message_type == "interactive":
+            interactive = message.get("interactive", {})
+            if interactive.get("type") == "button_reply":
+                text = interactive.get("button_reply", {}).get("title")
+            elif interactive.get("type") == "list_reply":
+                text = interactive.get("list_reply", {}).get("title")
+        elif message_type == "image":
+            image_info = message.get("image", {})
+            caption = image_info.get("caption", "")
+            text = caption if caption else "[Image received]"
+            media_id = image_info.get("id")
+            if media_id:
+                media_size, media_mime_type = await self._get_media_info(media_id)
+                if media_size is None:
+                    await self._send_message(
+                        from_number, "Sorry, I could not retrieve the image information. Please try again.", message_id
+                    )
+                    return
+                if media_size > self._max_file_size:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, the image file size ({media_size / (1024 * 1024):.2f} MB) exceeds the maximum allowed size of {self._max_file_size / (1024 * 1024):.2f} MB.",
+                        message_id,
+                    )
+                    return
+                image_data = await self._download_media(media_id)
+                if image_data is None:
+                    await self._send_message(from_number, "Sorry, I could not download the image. Please try again.", message_id)
+                    return
+                requests.append(
+                    AgentRequestImage(
+                        image_data=image_data,
+                        name=f"whatsapp_image_{message_id}",
+                        mime_type=media_mime_type or image_info.get("mime_type", "image/jpeg"),
+                    )
+                )
+        elif message_type == "document":
+            document_info = message.get("document", {})
+            caption = document_info.get("caption", "")
+            filename = document_info.get("filename", "document")
+            text = caption if caption else f"[Document received: {filename}]"
+            media_id = document_info.get("id")
+            if media_id:
+                media_size, media_mime_type = await self._get_media_info(media_id)
+                if media_size is None:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, I could not retrieve the document '{filename}' information. Please try again.",
+                        message_id,
+                    )
+                    return
+                if media_size > self._max_file_size:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, the document '{filename}' size ({media_size / (1024 * 1024):.2f} MB) exceeds the maximum allowed size of {self._max_file_size / (1024 * 1024):.2f} MB.",
+                        message_id,
+                    )
+                    return
+                file_data = await self._download_media(media_id)
+                if file_data is None:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, I could not download the document '{filename}'. Please try again.",
+                        message_id,
+                    )
+                    return
+                requests.append(
+                    AgentRequestFile(
+                        file_data=file_data,
+                        name=filename,
+                        mime_type=media_mime_type or document_info.get("mime_type"),
+                    )
+                )
+        elif message_type in ["video", "audio"]:
+            await self._send_message(from_number, "Sorry, audio and video messages are not supported yet.", message_id)
+            return
+
+        if not text:
+            self._log.warning("Unsupported message type: %s", message_type)
+            return
+
+        requests.insert(0, AgentRequestText(prompt=text))
+        farmer = self._lookup_active_farmer(from_number)
+        if farmer:
+            session_id = canonical_session_id(farmer.id)
+            acting_user = str(farmer.id)
+        else:
+            session_id = from_number
+            acting_user = from_number
+
+        try:
+            if self._whatsapp_agent_acknowledgement:
+                await self._send_message(from_number, self._whatsapp_agent_acknowledgement, message_id)
+            req = BaseChatRequest(
+                prompt=text,
+                agent=self._whatsapp_agent,
+                session_id=session_id,
+                user_id=acting_user,
+            )
+            try:
+                result, loaded_sid = await self._chat_service.execute(req, requests=requests)
+            except ValueError as ve:
+                self._log.warning("Agent execution rejected: %s (session_id: %s)", ve, session_id)
+                await self._send_message(from_number, "Sorry, no agent is available to handle your request.", message_id)
+                return
+            if farmer:
+                try:
+                    from agentkernel.core.runtime import Runtime
+
+                    runtime = Runtime.current()
+                    session = runtime.sessions().load(loaded_sid or session_id)
+                    if session is not None:
+                        seed_marketplace_session(session, farmer)
+                        await runtime.sessions().store(session)
+                except Exception:
+                    pass
+            await self._send_message(from_number, str(result), message_id)
+        except Exception as exc:  # noqa: BLE001
+            self._log.error("Error handling message: %s\n%s", exc, traceback.format_exc())
+            await self._send_message(from_number, "Sorry, there was an error processing your request.", message_id)

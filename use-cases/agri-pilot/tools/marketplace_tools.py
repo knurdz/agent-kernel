@@ -23,6 +23,26 @@ def _get_session_identity() -> tuple[Optional[int], Optional[str], Optional[str]
         session = ToolContext.get().session
     except Exception:  # noqa: BLE001 - no active tool context
         return None, None, None
+    # Canonical mobile / unified channel session: agri:user:{id}
+    try:
+        from marketplace.session_identity import parse_canonical_session_id, seed_marketplace_session_by_id
+
+        sid = getattr(session, "id", None) or getattr(session, "_id", None)
+        uid_from_session = parse_canonical_session_id(str(sid) if sid is not None else None)
+        if uid_from_session is not None and not session.get("marketplace_user_id"):
+            from marketplace.database import SessionLocal
+            from marketplace.models import User
+
+            db = SessionLocal()
+            try:
+                u = db.get(User, uid_from_session)
+                if u:
+                    seed_marketplace_session_by_id(session, u.id, u.role, u.subscription_status)
+                    return u.id, u.role, u.subscription_status
+            finally:
+                db.close()
+    except Exception:
+        pass
     # Support dev helper AK_MARKETPLACE__DEV_USER_ID injection (seeded before run)
     dev_id = os.environ.get("AK_MARKETPLACE__DEV_USER_ID")
     if dev_id and dev_id.strip().isdigit():
@@ -63,6 +83,28 @@ def _get_session_identity() -> tuple[Optional[int], Optional[str], Optional[str]
                     session.set("marketplace_subscription_status", sub)
             finally:
                 db.close()
+        except Exception:
+            pass
+    # Telegram fallback: session.id may still be chat_id before unified handler migration
+    if uid is None:
+        try:
+            sid = getattr(session, "id", None) or getattr(session, "_id", None)
+            if sid is not None:
+                from sqlalchemy import select
+
+                from marketplace.database import SessionLocal
+                from marketplace.models import User
+
+                db = SessionLocal()
+                try:
+                    u = db.scalars(select(User).where(User.telegram_chat_id == int(sid))).first()
+                    if u and u.role == "farmer" and u.subscription_status == "active":
+                        session.set("marketplace_user_id", u.id)
+                        session.set("marketplace_role", u.role)
+                        session.set("marketplace_subscription_status", u.subscription_status)
+                        return u.id, u.role, u.subscription_status
+                finally:
+                    db.close()
         except Exception:
             pass
     # WhatsApp fallback: session.id is from_number (wa_id) when KV not set

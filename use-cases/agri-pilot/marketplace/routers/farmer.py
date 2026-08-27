@@ -172,6 +172,16 @@ def patch_connection(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from exc
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="connection not found")
+    try:
+        from marketplace.models import ConnectionRequest, Listing
+        from marketplace.notifications import notify_buyer_connection_update
+
+        conn = db.get(ConnectionRequest, connection_id)
+        listing = db.get(Listing, conn.listing_id) if conn else None
+        if conn and listing:
+            notify_buyer_connection_update(conn.buyer_id, connection_id, new_status, listing.crop)
+    except Exception:
+        pass
     return updated
 
 

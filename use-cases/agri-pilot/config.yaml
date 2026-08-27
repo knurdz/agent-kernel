@@ -63,3 +63,23 @@ whatsapp:
 # "API / Telegram".
 telegram:
   agent: triage
+
+# Conversation threads (mobile chat history). Redis in Docker via AK_THREAD__* overrides.
+thread:
+  type: in_memory
+  naming:
+    model: gpt-4o-mini
+    max_length: 80
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 2592000
+    prefix: "ak:thread:"
+
+channels:
+  whatsapp_display_number: "+15551234567"
+  whatsapp_wa_me: "https://wa.me/15551234567"
+  telegram_bot_username: "agripilot_bot"
+
+notifications:
+  fcm_enabled: false
+  firebase_credentials_path: ""
