@@ -331,9 +331,33 @@ WhatsApp Meta console configuration (manual):
 EOF
 }
 
+sync_postgres_password() {
+  log "Ensuring Postgres role password matches ${ENV_FILE} ..."
+  local sql
+  sql="$(POSTGRES_USER="${POSTGRES_USER}" POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" python3 - <<PY
+import os
+
+user = os.environ["POSTGRES_USER"]
+password = os.environ["POSTGRES_PASSWORD"]
+print('ALTER USER "{}" WITH PASSWORD {};'.format(user, repr(password)))
+PY
+)"
+  compose exec -T db psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB:-agripilot}" -c "${sql}"
+}
+
 show_failure_diagnostics() {
   warn "Deployment failed. Recent service status:"
   compose ps || true
+  if compose logs --tail=200 db 2>/dev/null | grep -q "password authentication failed for user"; then
+    warn "Postgres rejected the app/migrate password."
+    warn "This usually means POSTGRES_PASSWORD in ${ENV_FILE} was changed after the db volume was first created."
+    warn "Fix: pull latest deploy script (auto-syncs password), or run:"
+    warn "  ./deploy/deploy-vps.sh sync-db-password"
+    warn "Or reset the empty database volume:"
+    warn "  docker compose -p ${COMPOSE_PROJECT_NAME} -f ${COMPOSE_FILE} --env-file ${ENV_FILE} down"
+    warn "  docker volume rm ${COMPOSE_PROJECT_NAME}_pgdata"
+    warn "  ./deploy/deploy-vps.sh deploy"
+  fi
   warn "Recent logs (last 80 lines per service):"
   for svc in db redis migrate app caddy; do
     warn "--- ${svc} ---"
@@ -385,6 +409,8 @@ cmd_deploy() {
   log "Starting database and Redis..."
   compose up -d db redis
   wait_for_service_healthy db
+
+  sync_postgres_password
 
   log "Running database migrations..."
   compose run --rm migrate
@@ -488,6 +514,14 @@ cmd_restore() {
   log "Restore complete. Consider restarting the app: $0 restart"
 }
 
+cmd_sync_db_password() {
+  load_env
+  compose up -d db
+  wait_for_service_healthy db
+  sync_postgres_password
+  log "Postgres password synced from ${ENV_FILE}."
+}
+
 cmd_validate() {
   if [[ ! -f "${ENV_FILE}" ]]; then
     ENV_FILE="${DEPLOY_DIR}/env.smoke.example"
@@ -508,6 +542,7 @@ Commands:
   restart   Restart app and Caddy
   backup    Timestamped Postgres dump under deploy/backups/
   restore   Restore Postgres from a .sql.gz backup (destructive; requires confirmation)
+  sync-db-password  Align Postgres role password with POSTGRES_PASSWORD in ${ENV_FILE}
   validate  Validate merged Compose config
 
 Bootstrap env vars (fresh VPS):
@@ -529,6 +564,7 @@ main() {
     restart) cmd_restart "$@" ;;
     backup) cmd_backup "$@" ;;
     restore) cmd_restore "$@" ;;
+    sync-db-password) cmd_sync_db_password "$@" ;;
     validate) cmd_validate "$@" ;;
     -h | --help | help) usage ;;
     *) die "Unknown command: ${cmd}. Run $0 --help" ;;
