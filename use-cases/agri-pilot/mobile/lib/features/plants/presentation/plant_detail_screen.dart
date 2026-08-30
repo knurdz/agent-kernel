@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../../config/env.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../auth/domain/models.dart';
@@ -26,6 +27,7 @@ class _PlantDetailScreenState extends ConsumerState<PlantDetailScreen> {
   var _loading = true;
   String? _error;
   var _uploading = false;
+  File? _pendingImage;
 
   @override
   void initState() {
@@ -51,9 +53,13 @@ class _PlantDetailScreenState extends ConsumerState<PlantDetailScreen> {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source, maxWidth: 1920, imageQuality: 85);
     if (file == null) return;
-    setState(() => _uploading = true);
+    final image = File(file.path);
+    setState(() {
+      _uploading = true;
+      _pendingImage = image;
+    });
     try {
-      await ref.read(plantsRepositoryProvider).addObservation(widget.plantId, File(file.path));
+      await ref.read(plantsRepositoryProvider).addObservation(widget.plantId, image);
       await _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo analyzed and saved')));
@@ -61,11 +67,16 @@ class _PlantDetailScreenState extends ConsumerState<PlantDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e is ApiException ? e.message : 'Upload failed')),
+          SnackBar(content: Text(apiErrorMessage(e))),
         );
       }
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _pendingImage = null;
+        });
+      }
     }
   }
 
@@ -155,7 +166,27 @@ class _PlantDetailScreenState extends ConsumerState<PlantDetailScreen> {
                             ),
                           ),
                           SectionHeader(title: 'Photo timeline (${plant.observations.length})'),
-                          if (plant.observations.isEmpty)
+                          if (_uploading && _pendingImage != null) ...[
+                            Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                    child: Image.file(
+                                      _pendingImage!,
+                                      height: 180,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  const AnalysingStatus.photo(),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (plant.observations.isEmpty && !_uploading)
                             const EmptyState(
                               icon: Icons.photo_camera_outlined,
                               title: 'No photos yet',

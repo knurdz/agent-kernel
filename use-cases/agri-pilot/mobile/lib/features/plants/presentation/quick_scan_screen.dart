@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/domain/models.dart';
 import '../data/plants_repository.dart';
@@ -56,7 +57,7 @@ class _QuickScanScreenState extends ConsumerState<QuickScanScreen> {
       final result = await ref.read(plantsRepositoryProvider).scanPhoto(image, crop: widget.crop);
       setState(() => _result = result);
     } catch (e) {
-      setState(() => _error = e is ApiException ? e.message : 'Scan failed');
+      setState(() => _error = apiErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -154,7 +155,9 @@ class _QuickScanScreenState extends ConsumerState<QuickScanScreen> {
           ],
           if (_loading) ...[
             const SizedBox(height: 16),
-            const LinearProgressIndicator(),
+            Card(
+              child: const AnalysingStatus.photo(),
+            ),
           ],
           if (_error != null) ...[
             const SizedBox(height: 16),

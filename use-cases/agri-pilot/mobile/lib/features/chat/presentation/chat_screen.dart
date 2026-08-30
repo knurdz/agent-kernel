@@ -6,8 +6,18 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../data/chat_repository.dart';
+import 'widgets/chat_bubble.dart';
+
+class _ChatBubble {
+  const _ChatBubble({required this.role, required this.text, this.image});
+
+  final String role;
+  final String text;
+  final File? image;
+}
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, this.initialPrompt});
@@ -21,8 +31,9 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  final _messages = <({String role, String text})>[];
+  final _messages = <_ChatBubble>[];
   var _loading = false;
+  var _loadingWithPhoto = false;
   var _initialized = false;
 
   static const _promptChips = [
@@ -53,7 +64,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final repo = ref.read(chatRepositoryProvider);
       final history = await repo.history();
       setState(() {
-        _messages.addAll(history.map((m) => (role: m.role, text: m.content)));
+        _messages.addAll(history.map((m) => _ChatBubble(role: m.role, text: m.content)));
         _initialized = true;
       });
       _scrollToBottom();
@@ -74,29 +85,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
+  String _userBubbleText(String text, File? image) {
+    if (image != null) {
+      final trimmed = text.trim();
+      if (trimmed.isEmpty || trimmed == 'Diagnose this crop') return '';
+      return trimmed;
+    }
+    return text;
+  }
+
   Future<void> _send({File? image, String? presetText}) async {
     final text = presetText ?? _controller.text.trim();
     if (text.isEmpty && image == null) return;
+    final prompt = text.isEmpty ? 'Diagnose this crop' : text;
     setState(() {
       _loading = true;
-      _messages.add((role: 'user', text: image != null ? '$text [photo]' : text));
+      _loadingWithPhoto = image != null;
+      _messages.add(_ChatBubble(role: 'user', text: _userBubbleText(prompt, image), image: image));
     });
     if (presetText == null) _controller.clear();
     _scrollToBottom();
     try {
       final repo = ref.read(chatRepositoryProvider);
-      final reply = image != null
-          ? await repo.sendPhoto(text.isEmpty ? 'Diagnose this crop' : text, image)
-          : await repo.sendText(text);
-      setState(() => _messages.add((role: 'assistant', text: reply)));
+      final reply = image != null ? await repo.sendPhoto(prompt, image) : await repo.sendText(text);
+      setState(() => _messages.add(_ChatBubble(role: 'assistant', text: reply)));
     } catch (e) {
-      setState(() => _messages.add((
+      setState(() => _messages.add(_ChatBubble(
             role: 'assistant',
-            text: e is ApiException ? e.message : 'Error sending message',
+            text: apiErrorMessage(e),
           )));
     } finally {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          _loadingWithPhoto = false;
+        });
         _scrollToBottom();
       }
     }
@@ -149,6 +172,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final itemCount = _messages.length + (_loading ? 1 : 0);
 
     return Scaffold(
       appBar: AppBar(
@@ -159,7 +183,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           Expanded(
             child: !_initialized
                 ? const Center(child: CircularProgressIndicator())
-                : _messages.isEmpty
+                : _messages.isEmpty && !_loading
                     ? EmptyState(
                         icon: Icons.smart_toy_outlined,
                         title: 'Your AI farming advisor',
@@ -170,38 +194,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(16),
-                        itemCount: _messages.length,
+                        itemCount: itemCount,
                         itemBuilder: (_, i) {
-                          final m = _messages[i];
-                          final isUser = m.role == 'user';
-                          return Align(
-                            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              constraints: BoxConstraints(
-                                maxWidth: MediaQuery.sizeOf(context).width * 0.78,
-                              ),
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: isUser
-                                    ? theme.colorScheme.primaryContainer
-                                    : theme.colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(16),
-                                  topRight: const Radius.circular(16),
-                                  bottomLeft: Radius.circular(isUser ? 16 : 4),
-                                  bottomRight: Radius.circular(isUser ? 4 : 16),
+                          if (_loading && i == itemCount - 1) {
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                constraints: BoxConstraints(
+                                  maxWidth: MediaQuery.sizeOf(context).width * 0.78,
                                 ),
-                              ),
-                              child: Text(
-                                m.text,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: isUser
-                                      ? theme.colorScheme.onPrimaryContainer
-                                      : theme.colorScheme.onSurface,
+                                margin: const EdgeInsets.symmetric(vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(16),
+                                    topRight: Radius.circular(16),
+                                    bottomLeft: Radius.circular(4),
+                                    bottomRight: Radius.circular(16),
+                                  ),
                                 ),
+                                child: _loadingWithPhoto
+                                    ? const AnalysingStatus.photo(compact: true)
+                                    : const AnalysingStatus.text(compact: true),
                               ),
-                            ),
+                            );
+                          }
+                          return ChatBubble(
+                            role: _messages[i].role,
+                            text: _messages[i].text,
+                            image: _messages[i].image,
                           );
                         },
                       ),
@@ -243,8 +264,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
           ],
-          if (_loading)
-            LinearProgressIndicator(color: theme.colorScheme.primary),
           SafeArea(
             top: false,
             child: Padding(
