@@ -1,0 +1,50 @@
+{
+  "crop": "rice",
+  "source": "FAO Plant Production and Protection Division — Rice cultivation (illustrative smallholder guide)",
+  "days_to_harvest": {"min": 110, "max": 150},
+  "spacing": "Transplant 2–3 seedlings per hill, 20 cm × 20 cm in puddled fields.",
+  "how_to_grow": "Prepare nursery beds and sow pre-germinated seed. Transplant 21–25-day-old seedlings into a puddled, level field. Maintain 5–10 cm standing water during early growth, then alternate wetting and drying in many systems. Weed within the first 30 days after transplanting.",
+  "harvest_signs": "Harvest when 80–85% of grains on the panicle are golden yellow and firm. Cut at 20–25 cm above ground if threshing by hand. Dry grain to 14% moisture for safe storage.",
+  "stages": [
+    {
+      "id": "nursery",
+      "name": "Nursery",
+      "day_start": 0,
+      "day_end": 25,
+      "watering": "Keep nursery beds flooded or very moist; protect from heavy rain on young seedlings.",
+      "nutrients": "Apply a small dose of nitrogen in the nursery only if seedlings look pale — follow local extension rates."
+    },
+    {
+      "id": "tillering",
+      "name": "Tillering",
+      "day_start": 26,
+      "day_end": 55,
+      "watering": "Maintain shallow flood or saturated soil; drain briefly if algae or pests build up.",
+      "nutrients": "Basal nitrogen and phosphorus at transplant; split nitrogen applications per local recommendation."
+    },
+    {
+      "id": "panicle_initiation",
+      "name": "Panicle initiation",
+      "day_start": 56,
+      "day_end": 85,
+      "watering": "Do not let the field dry completely during this sensitive stage.",
+      "nutrients": "Second nitrogen split before panicle initiation; ensure potassium if soils are deficient."
+    },
+    {
+      "id": "grain_filling",
+      "name": "Grain filling",
+      "day_start": 86,
+      "day_end": 120,
+      "watering": "Gradual drainage in many varieties improves grain filling and reduces lodging.",
+      "nutrients": "Late nitrogen only if extension advises; excess late N increases lodging."
+    },
+    {
+      "id": "harvest",
+      "name": "Harvest",
+      "day_start": 110,
+      "day_end": 160,
+      "watering": "Drain field fully 7–10 days before harvest.",
+      "nutrients": "No feeding; harvest at correct moisture."
+    }
+  ]
+}

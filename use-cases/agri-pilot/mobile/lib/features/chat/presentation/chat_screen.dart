@@ -8,9 +8,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/start_tracking_crop_banner.dart';
+import '../../auth/domain/models.dart';
 import '../../plants/data/plants_repository.dart';
+import '../../plants/presentation/widgets/my_plants_banner.dart';
 import '../data/chat_repository.dart';
+import '../domain/thread_title.dart';
 import 'widgets/chat_bubble.dart';
 
 class _ChatBubble {
@@ -44,8 +46,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   var _loading = false;
   var _loadingWithPhoto = false;
   var _initialized = false;
-  var _showTrackingBanner = false;
   var _sentFirstMessage = false;
+  late String _title;
+  List<PlantSummary> _plants = [];
   File? _pendingImage;
 
   static const _promptChips = [
@@ -57,8 +60,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _title = isGenericThreadTitle(widget.threadName) ? 'New conversation' : widget.threadName!.trim();
     _loadHistory();
-    _loadTrackingBanner();
+    _loadPlants();
     final prompt = widget.initialPrompt;
     if (prompt != null && prompt.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _send(presetText: prompt));
@@ -72,10 +76,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
-  Future<void> _loadTrackingBanner() async {
+  Future<void> _loadPlants() async {
     try {
       final plants = await ref.read(plantsRepositoryProvider).listPlants();
-      if (mounted) setState(() => _showTrackingBanner = plants.isEmpty);
+      if (mounted) setState(() => _plants = plants);
     } catch (_) {
       // Banner is optional; ignore load failures.
     }
@@ -87,6 +91,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final history = await repo.getMessages(widget.sessionId);
       setState(() {
         _messages.addAll(history.map((m) => _ChatBubble(role: m.role, text: m.content)));
+        _sentFirstMessage = history.isNotEmpty && !isGenericThreadTitle(_title);
+        if (isGenericThreadTitle(_title)) {
+          final firstUser = history.where((m) => m.role == 'user').firstOrNull;
+          if (firstUser != null) {
+            _title = deriveThreadTitle(
+              prompt: firstUser.content,
+              hasPhoto: firstUser.content.trim().isEmpty || isGenericThreadTitle(firstUser.content),
+              at: firstUser.createdAt,
+            );
+          }
+        }
         _initialized = true;
       });
       _scrollToBottom();
@@ -116,13 +131,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return text;
   }
 
-  String? _threadNameForFirstMessage(String text) {
-    if (_sentFirstMessage) return null;
-    final preset = widget.threadName?.trim();
-    if (preset != null && preset.isNotEmpty) return preset;
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return 'Crop photo';
-    return trimmed.length > 48 ? '${trimmed.substring(0, 48)}…' : trimmed;
+  String? _threadNameForSend(String text, {required bool hasPhoto}) {
+    if (!isGenericThreadTitle(_title)) {
+      return _sentFirstMessage ? null : _title;
+    }
+    final fromHistory = _messages
+        .where((m) => m.role == 'user' && m.text.trim().isNotEmpty && !isGenericThreadTitle(m.text))
+        .firstOrNull;
+    if (fromHistory != null) {
+      return deriveThreadTitle(prompt: fromHistory.text);
+    }
+    return deriveThreadTitle(prompt: text, hasPhoto: hasPhoto);
   }
 
   Future<void> _send({File? image, String? presetText}) async {
@@ -130,7 +149,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = presetText ?? _controller.text.trim();
     if (text.isEmpty && pending == null) return;
     final prompt = text.isEmpty ? 'Diagnose this crop' : text;
-    final threadName = _threadNameForFirstMessage(prompt);
+    final threadName = _threadNameForSend(prompt, hasPhoto: pending != null);
     setState(() {
       _loading = true;
       _loadingWithPhoto = pending != null;
@@ -153,7 +172,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               sessionId: widget.sessionId,
               threadName: threadName,
             );
-      if (mounted) setState(() => _sentFirstMessage = true);
+      if (mounted) {
+        setState(() {
+          _sentFirstMessage = true;
+          if (threadName != null) _title = threadName;
+        });
+      }
       setState(() => _messages.add(_ChatBubble(role: 'assistant', text: reply)));
     } catch (e) {
       setState(() => _messages.add(_ChatBubble(
@@ -228,11 +252,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.threadName ?? 'Conversation'),
+        title: Text(_title, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
       body: Column(
         children: [
-          if (_showTrackingBanner) const StartTrackingCropBanner(),
+          MyPlantsBanner(plants: _plants, compact: true),
           Expanded(
             child: !_initialized
                 ? const Center(child: CircularProgressIndicator())
@@ -287,7 +311,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 itemCount: _promptChips.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (_, i) => ActionChip(
                   label: Text(_promptChips[i]),
                   onPressed: _loading ? null : () => _send(presetText: _promptChips[i]),

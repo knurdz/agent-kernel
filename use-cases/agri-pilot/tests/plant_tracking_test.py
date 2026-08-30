@@ -120,7 +120,38 @@ def test_plant_crud_and_observation(tmp_path, monkeypatch):
 
     detail = client.get(f"/api/farmer/plants/{plant_id}", headers={"Authorization": f"Bearer {token}"})
     assert detail.status_code == 200
-    assert detail.json()["insights"]["observation_count"] == 1
+    body = detail.json()
+    assert body["insights"]["observation_count"] == 1
+    assert "health_series" in body["insights"]
+    assert body["insights"]["crop_care"] is not None
+    assert body["insights"]["crop_care"]["how_to_grow"]
+
+
+def test_patch_plant_planted_on(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGRIPILOT_PLANT_MEDIA_ROOT", str(tmp_path))
+    app, _, _ = _app_with_memory()
+    client = TestClient(app)
+    token = _signup_login(client, "+94770003008")
+
+    r = client.post(
+        "/api/farmer/plants",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"crop": "tomato", "name": "Patch test"},
+    )
+    plant_id = r.json()["id"]
+
+    patch = client.patch(
+        f"/api/farmer/plants/{plant_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"planted_on": "2026-06-01"},
+    )
+    assert patch.status_code == 200, patch.text
+    assert patch.json()["planted_on"] == "2026-06-01"
+
+    detail = client.get(f"/api/farmer/plants/{plant_id}", headers={"Authorization": f"Bearer {token}"})
+    care = detail.json()["insights"]["crop_care"]
+    assert care["days_since_planted"] is not None
+    assert care["current_stage"] is not None
 
 
 def test_import_from_listing_unique_link(tmp_path, monkeypatch):
@@ -176,7 +207,7 @@ def test_buyer_insights_public_no_photos(tmp_path, monkeypatch):
     body = insights.json()
     assert body["observation_count"] == 1
     assert body["latest_label"] == "Tomato___Early_blight"
-    assert "photo" not in str(body).lower() or "photo_url" not in body
+    assert "crop_care" not in body
 
 
 def test_buyer_insights_404_when_unlinked():

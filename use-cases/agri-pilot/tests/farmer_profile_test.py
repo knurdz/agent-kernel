@@ -124,8 +124,10 @@ def test_knowledge_binds_and_mentions_recording():
 
     names = {getattr(t, "name", t) for t in knowledge_tools}
     assert "record_case_outcome" in names
+    assert "get_crop_guide" in names
     assert "record_case_outcome" in KNOWLEDGE_INSTRUCTIONS
     assert "advice_summary" in KNOWLEDGE_INSTRUCTIONS
+    assert "get_crop_guide" in KNOWLEDGE_INSTRUCTIONS
 
 
 def test_supervisor_binds_profile_tools():

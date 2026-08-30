@@ -22,6 +22,7 @@ from marketplace.plant_service import (
     import_plant_from_listing,
     list_observations,
     list_plants,
+    update_plant,
 )
 from marketplace.schemas import (
     PaginatedPlants,
@@ -30,6 +31,7 @@ from marketplace.schemas import (
     PlantInsights,
     PlantObservationOut,
     PlantSummary,
+    PlantUpdate,
     PredictionOut,
     ScanResult,
 )
@@ -185,6 +187,28 @@ def get_plant_detail(
         observations=[_observation_out(o) for o in observations],
         insights=insights,
     )
+
+
+@router.patch("/plants/{plant_id}", response_model=PlantSummary)
+def patch_plant(
+    plant_id: int,
+    payload: PlantUpdate,
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    try:
+        plant = update_plant(
+            db,
+            farmer_id=farmer.id,
+            plant_id=plant_id,
+            name=payload.name,
+            planted_on=payload.planted_on,
+            clear_planted_on=payload.clear_planted_on,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="plant not found") from exc
+    observations = list_observations(db, plant_id)
+    return _plant_summary(plant, observations)
 
 
 @router.post("/plants/{plant_id}/observations", response_model=PlantObservationOut, status_code=status.HTTP_201_CREATED)

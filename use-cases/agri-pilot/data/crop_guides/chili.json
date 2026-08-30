@@ -1,0 +1,50 @@
+{
+  "crop": "chili",
+  "source": "FAO Plant Production and Protection Division — Chili pepper cultivation (illustrative smallholder guide)",
+  "days_to_harvest": {"min": 75, "max": 100},
+  "spacing": "40–50 cm between plants, 60–75 cm between rows.",
+  "how_to_grow": "Raise seedlings for 6–8 weeks before transplanting. Chilies need full sun and warm soil. Transplant after the last cool nights. Pinch the growing tip once to encourage branching. Support tall varieties with a stake in windy areas.",
+  "harvest_signs": "Pick green chilies when full-sized and firm, or leave to ripen red for higher heat and value. Regular picking encourages more fruit. Wear gloves when handling hot varieties.",
+  "stages": [
+    {
+      "id": "seedling",
+      "name": "Seedling",
+      "day_start": 0,
+      "day_end": 28,
+      "watering": "Keep medium moist; avoid waterlogging which causes damping-off.",
+      "nutrients": "Light compost in the seedbed only; no concentrated fertilizer on young roots."
+    },
+    {
+      "id": "vegetative",
+      "name": "Vegetative",
+      "day_start": 29,
+      "day_end": 50,
+      "watering": "Water deeply every 2–3 days; chilies tolerate brief dry spells but yield drops if stressed repeatedly.",
+      "nutrients": "Balanced NPK or compost side-dress 2 weeks after transplant per local extension guidance."
+    },
+    {
+      "id": "flowering",
+      "name": "Flowering",
+      "day_start": 51,
+      "day_end": 70,
+      "watering": "Even moisture; stress at flowering reduces fruit set.",
+      "nutrients": "Reduce nitrogen; add potassium and phosphorus sources (compost, bone meal, or approved organic blends)."
+    },
+    {
+      "id": "fruiting",
+      "name": "Fruiting",
+      "day_start": 71,
+      "day_end": 95,
+      "watering": "Regular watering; reduce slightly when fruit is colouring.",
+      "nutrients": "Potassium supports pungency and colour; avoid late heavy nitrogen."
+    },
+    {
+      "id": "harvest",
+      "name": "Harvest",
+      "day_start": 75,
+      "day_end": 120,
+      "watering": "Moderate watering only.",
+      "nutrients": "Minimal feeding during peak harvest; remove old fruit to keep plants productive."
+    }
+  ]
+}

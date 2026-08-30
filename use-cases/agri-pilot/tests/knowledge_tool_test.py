@@ -51,3 +51,26 @@ def test_nonsense_disease_returns_no_reliable_evidence(manager):
 def test_unknown_crop_returns_no_reliable_evidence(manager):
     result = _query(manager, crop="durian")
     assert result["reliable"] is False
+
+
+def test_topic_filter_excludes_disease_docs(manager):
+    manager.write(
+        [
+            {
+                "text": "How to grow tomatoes well.",
+                "metadata": {"crop": "tomato", "topic": "cultivation"},
+            },
+            {
+                "text": "Early blight treatment steps.",
+                "metadata": {"crop": "tomato", "disease": "early blight", "topic": "disease"},
+            },
+        ]
+    )
+    cultivation = _query(manager, crop="tomato", topic="cultivation")
+    assert cultivation["reliable"] is True
+    assert "grow" in cultivation["evidence"][0]["text"].lower()
+    assert cultivation["evidence"][0].get("topic") == "cultivation"
+
+    default_disease = _query(manager, crop="tomato")
+    assert default_disease["reliable"] is True
+    assert default_disease["evidence"][0].get("topic") == "disease"

@@ -163,6 +163,24 @@ def _severity_rank(label: str | None) -> int:
     return 3
 
 
+def _health_series(observations: list[PlantObservation]) -> list[dict[str, Any]]:
+    series: list[dict[str, Any]] = []
+    for o in observations:
+        if not o.quality_ok or not o.top_label or o.top_confidence is None:
+            continue
+        if o.top_confidence < CONFIDENCE_THRESHOLD:
+            continue
+        series.append(
+            {
+                "date": o.captured_at.date().isoformat(),
+                "label": o.top_label,
+                "confidence": o.top_confidence,
+                "severity": _severity_rank(o.top_label),
+            }
+        )
+    return series
+
+
 def compute_trend(observations: list[PlantObservation]) -> str:
     confident = [
         o
@@ -182,6 +200,8 @@ def compute_trend(observations: list[PlantObservation]) -> str:
 
 
 def build_plant_insights(plant: Plant, observations: list[PlantObservation]) -> dict[str, Any]:
+    from tools.crop_guide import compute_crop_care
+
     confident = [
         o
         for o in observations
@@ -196,6 +216,8 @@ def build_plant_insights(plant: Plant, observations: list[PlantObservation]) -> 
         }
         for o in confident
     ]
+    health_series = _health_series(observations)
+    crop_care = compute_crop_care(plant.crop, planted_on=plant.planted_on)
     return {
         "crop": plant.crop,
         "observation_count": len(observations),
@@ -204,8 +226,37 @@ def build_plant_insights(plant: Plant, observations: list[PlantObservation]) -> 
         "latest_label": latest.top_label if latest else None,
         "latest_confidence": latest.top_confidence if latest else None,
         "timeline": timeline,
+        "health_series": health_series,
         "trend": compute_trend(observations),
+        "crop_care": crop_care,
+        "growth_progress": crop_care.get("growth_progress") if crop_care else None,
     }
+
+
+def update_plant(
+    db: Session,
+    *,
+    farmer_id: int,
+    plant_id: int,
+    name: Optional[str] = None,
+    planted_on: Optional[date] = None,
+    clear_planted_on: bool = False,
+) -> Plant:
+    plant = get_plant(db, farmer_id, plant_id)
+    if not plant:
+        raise LookupError("plant not found")
+    if name is not None:
+        trimmed = name.strip()
+        if trimmed:
+            plant.name = trimmed
+    if clear_planted_on:
+        plant.planted_on = None
+    elif planted_on is not None:
+        plant.planted_on = planted_on
+    plant.updated_at = _utcnow()
+    db.commit()
+    db.refresh(plant)
+    return plant
 
 
 def get_listing_insights(db: Session, listing_id: int) -> Optional[dict[str, Any]]:

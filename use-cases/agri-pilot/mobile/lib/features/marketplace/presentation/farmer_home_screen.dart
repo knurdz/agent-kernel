@@ -9,6 +9,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../auth/domain/models.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../plants/data/plants_repository.dart';
+import '../../plants/presentation/widgets/my_plants_banner.dart';
 import '../data/marketplace_repository.dart';
 
 class FarmerHomeScreen extends ConsumerStatefulWidget {
@@ -203,59 +204,7 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
                       ),
                     ),
                   ],
-                  SectionHeader(
-                    title: 'My plants (${_plants.length})',
-                    actionLabel: 'See all',
-                    onAction: () => context.go('/home/plants'),
-                  ),
-                  if (_plants.isEmpty)
-                    Card(
-                      child: ListTile(
-                        leading: Icon(Icons.eco_outlined, color: theme.colorScheme.primary),
-                        title: const Text('Start tracking a crop'),
-                        subtitle: const Text('Monitor health from planting to harvest'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.go('/home/plants'),
-                      ),
-                    )
-                  else
-                    SizedBox(
-                      height: 110,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _plants.length.clamp(0, 5),
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, i) {
-                          final p = _plants[i];
-                          return SizedBox(
-                            width: 160,
-                            child: Card(
-                              child: InkWell(
-                                onTap: () => context.go('/home/plants/${p.id}'),
-                                borderRadius: BorderRadius.circular(16),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                      Text('${p.observationCount} photos', style: theme.textTheme.bodySmall),
-                                      if (p.latestLabel != null)
-                                        Text(
-                                          p.latestLabel!.replaceAll('_', ' '),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                  MyPlantsBanner(plants: _plants, horizontalPadding: 0),
                   const SizedBox(height: 16),
                   SectionHeader(title: 'My listings (${_listings.length})'),
                   if (_listings.isEmpty && _error == null)

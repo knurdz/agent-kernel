@@ -187,6 +187,7 @@ class _CreatePlantSheet extends ConsumerStatefulWidget {
 class _CreatePlantSheetState extends ConsumerState<_CreatePlantSheet> {
   late final TextEditingController _crop;
   late final TextEditingController _name;
+  DateTime? _plantedOn;
   String? _formError;
   var _submitting = false;
 
@@ -210,6 +211,17 @@ class _CreatePlantSheetState extends ConsumerState<_CreatePlantSheet> {
     if (mounted) Navigator.pop(context, success);
   }
 
+  Future<void> _pickPlantedDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _plantedOn ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: 'When did you plant? (optional)',
+    );
+    if (picked != null) setState(() => _plantedOn = picked);
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
     final cropVal = _crop.text.trim();
@@ -225,6 +237,7 @@ class _CreatePlantSheetState extends ConsumerState<_CreatePlantSheet> {
       await ref.read(plantsRepositoryProvider).createPlant(
             crop: cropVal,
             name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+            plantedOn: _plantedOn,
           );
       await _dismissSheet(success: true);
     } catch (e) {
@@ -261,6 +274,16 @@ class _CreatePlantSheetState extends ConsumerState<_CreatePlantSheet> {
           TextField(
             controller: _name,
             decoration: const InputDecoration(labelText: 'Label (optional)', hintText: 'Field A tomatoes'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _pickPlantedDate,
+            icon: const Icon(Icons.calendar_today_outlined),
+            label: Text(
+              _plantedOn != null
+                  ? 'Planted: ${_plantedOn!.toLocal().toString().split(' ').first}'
+                  : 'Set plant date (optional)',
+            ),
           ),
           if (_formError != null) ...[
             const SizedBox(height: 8),

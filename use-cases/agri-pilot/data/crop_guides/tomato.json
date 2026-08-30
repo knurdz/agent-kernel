@@ -1,0 +1,50 @@
+{
+  "crop": "tomato",
+  "source": "FAO Plant Production and Protection Division — Tomato cultivation (illustrative smallholder guide)",
+  "days_to_harvest": {"min": 70, "max": 90},
+  "spacing": "45–60 cm between plants, 90 cm between rows; stake or cage for airflow.",
+  "how_to_grow": "Start seedlings in a nursery bed or trays for 4–6 weeks. Transplant when plants have 4–6 true leaves and night temperatures stay above 15°C. Water at the base in the morning; mulch to retain moisture. Remove suckers on indeterminate varieties if you want fewer, larger fruit.",
+  "harvest_signs": "Pick when fruit is fully coloured for the variety but still firm. Harvest every 2–3 days in peak season. Do not leave overripe fruit on the plant — it attracts pests and reduces new fruit set.",
+  "stages": [
+    {
+      "id": "seedling",
+      "name": "Seedling",
+      "day_start": 0,
+      "day_end": 21,
+      "watering": "Keep seedbed moist but not waterlogged; light watering twice daily in hot weather.",
+      "nutrients": "No heavy fertilizer in the nursery. A thin layer of well-rotted compost in the transplant hole is enough at this stage."
+    },
+    {
+      "id": "vegetative",
+      "name": "Vegetative",
+      "day_start": 22,
+      "day_end": 45,
+      "watering": "Deep watering 2–3 times per week; increase frequency in sandy soil or dry spells.",
+      "nutrients": "Side-dress with compost or a balanced NPK (e.g. 10-10-10) about 2 weeks after transplant — follow local extension rates; avoid excess nitrogen late in this stage."
+    },
+    {
+      "id": "flowering",
+      "name": "Flowering",
+      "day_start": 46,
+      "day_end": 60,
+      "watering": "Consistent moisture is critical; irregular watering causes blossom-end rot and flower drop.",
+      "nutrients": "Shift toward potassium and phosphorus; reduce nitrogen. Compost tea or a low-nitrogen blend supports flowering and fruit set."
+    },
+    {
+      "id": "fruiting",
+      "name": "Fruiting",
+      "day_start": 61,
+      "day_end": 85,
+      "watering": "Maintain even soil moisture; mulch helps. Reduce watering slightly as fruit ripens to improve flavour.",
+      "nutrients": "Potassium-rich feeding (e.g. wood ash or K-focused organic mix per local advice) supports fruit size and colour."
+    },
+    {
+      "id": "harvest",
+      "name": "Harvest",
+      "day_start": 70,
+      "day_end": 120,
+      "watering": "Water only as needed to prevent wilting; avoid overhead irrigation near harvest.",
+      "nutrients": "Stop heavy feeding 2–3 weeks before final harvest; focus on picking and post-harvest handling."
+    }
+  ]
+}

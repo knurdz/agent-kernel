@@ -4,6 +4,7 @@ import 'package:agripilot_mobile/core/widgets/analysing_status.dart';
 import 'package:agripilot_mobile/features/chat/data/chat_repository.dart';
 import 'package:agripilot_mobile/features/chat/presentation/widgets/chat_bubble.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -63,5 +64,26 @@ void main() {
     );
 
     expect(find.text('Leaf spots'), findsOneWidget);
+  });
+
+  testWidgets('ChatBubble renders assistant markdown as formatted text', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 320,
+            child: ChatBubble(
+              role: 'assistant',
+              text: '## Treatment\n\nUse **neem oil** twice a week.',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(MarkdownBody), findsOneWidget);
+    expect(find.text('Treatment'), findsOneWidget);
+    expect(find.text('**neem oil**'), findsNothing);
+    expect(find.textContaining('neem oil'), findsOneWidget);
   });
 }

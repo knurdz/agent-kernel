@@ -24,6 +24,8 @@ dependencies:
   geolocator: ^13.0.4
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
+  flutter_markdown_plus: ^1.0.12
+  fl_chart: ^0.70.2
 
 dev_dependencies:
   flutter_test:

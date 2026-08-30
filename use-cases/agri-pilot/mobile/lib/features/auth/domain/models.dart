@@ -312,6 +312,94 @@ class PlantObservation {
   final String? photoUrl;
 }
 
+class CropStage {
+  CropStage({this.id, this.name, this.watering, this.nutrients});
+
+  factory CropStage.fromJson(Map<String, dynamic> json) => CropStage(
+        id: json['id'] as String?,
+        name: json['name'] as String?,
+        watering: json['watering'] as String?,
+        nutrients: json['nutrients'] as String?,
+      );
+
+  final String? id;
+  final String? name;
+  final String? watering;
+  final String? nutrients;
+}
+
+class CropCare {
+  CropCare({
+    this.crop,
+    this.source,
+    this.daysToHarvestMin,
+    this.daysToHarvestMax,
+    this.spacing,
+    this.howToGrow,
+    this.harvestSigns,
+    this.daysSincePlanted,
+    this.harvestWindowStart,
+    this.harvestWindowEnd,
+    this.daysToHarvestMinRemaining,
+    this.daysToHarvestMaxRemaining,
+    this.growthProgress,
+    this.currentStage,
+    this.needsPlantedDate = false,
+  });
+
+  factory CropCare.fromJson(Map<String, dynamic> json) => CropCare(
+        crop: json['crop'] as String?,
+        source: json['source'] as String?,
+        daysToHarvestMin: json['days_to_harvest_min'] as int?,
+        daysToHarvestMax: json['days_to_harvest_max'] as int?,
+        spacing: json['spacing'] as String?,
+        howToGrow: json['how_to_grow'] as String?,
+        harvestSigns: json['harvest_signs'] as String?,
+        daysSincePlanted: json['days_since_planted'] as int?,
+        harvestWindowStart: json['harvest_window_start'] as String?,
+        harvestWindowEnd: json['harvest_window_end'] as String?,
+        daysToHarvestMinRemaining: json['days_to_harvest_min_remaining'] as int?,
+        daysToHarvestMaxRemaining: json['days_to_harvest_max_remaining'] as int?,
+        growthProgress: json['growth_progress'] != null ? (json['growth_progress'] as num).toDouble() : null,
+        currentStage: json['current_stage'] != null
+            ? CropStage.fromJson(json['current_stage'] as Map<String, dynamic>)
+            : null,
+        needsPlantedDate: json['needs_planted_date'] as bool? ?? false,
+      );
+
+  final String? crop;
+  final String? source;
+  final int? daysToHarvestMin;
+  final int? daysToHarvestMax;
+  final String? spacing;
+  final String? howToGrow;
+  final String? harvestSigns;
+  final int? daysSincePlanted;
+  final String? harvestWindowStart;
+  final String? harvestWindowEnd;
+  final int? daysToHarvestMinRemaining;
+  final int? daysToHarvestMaxRemaining;
+  final double? growthProgress;
+  final CropStage? currentStage;
+  final bool needsPlantedDate;
+}
+
+class HealthPoint {
+  HealthPoint({required this.date, this.label, this.confidence, required this.severity});
+
+  factory HealthPoint.fromJson(Map<String, dynamic> json) => HealthPoint(
+        date: json['date'] as String,
+        label: json['label'] as String?,
+        confidence: json['confidence'] != null ? (json['confidence'] as num).toDouble() : null,
+        severity: json['severity'] as int? ?? 0,
+      );
+
+  final String date;
+  final String? label;
+  final double? confidence;
+  final int severity;
+}
+
 class PlantInsights {
   PlantInsights({
     required this.crop,
@@ -321,7 +409,10 @@ class PlantInsights {
     this.latestLabel,
     this.latestConfidence,
     required this.timeline,
+    required this.healthSeries,
     required this.trend,
+    this.cropCare,
+    this.growthProgress,
   });
 
   factory PlantInsights.fromJson(Map<String, dynamic> json) => PlantInsights(
@@ -332,7 +423,12 @@ class PlantInsights {
         latestLabel: json['latest_label'] as String?,
         latestConfidence: json['latest_confidence'] != null ? (json['latest_confidence'] as num).toDouble() : null,
         timeline: (json['timeline'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
+        healthSeries: (json['health_series'] as List<dynamic>? ?? [])
+            .map((e) => HealthPoint.fromJson(e as Map<String, dynamic>))
+            .toList(),
         trend: json['trend'] as String? ?? 'unknown',
+        cropCare: json['crop_care'] != null ? CropCare.fromJson(json['crop_care'] as Map<String, dynamic>) : null,
+        growthProgress: json['growth_progress'] != null ? (json['growth_progress'] as num).toDouble() : null,
       );
 
   final String crop;
@@ -342,7 +438,10 @@ class PlantInsights {
   final String? latestLabel;
   final double? latestConfidence;
   final List<Map<String, dynamic>> timeline;
+  final List<HealthPoint> healthSeries;
   final String trend;
+  final CropCare? cropCare;
+  final double? growthProgress;
 }
 
 class PlantDetail {

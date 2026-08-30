@@ -352,7 +352,24 @@ class PlantInsights(BaseModel):
     latest_label: Optional[str] = None
     latest_confidence: Optional[float] = None
     timeline: list[dict] = Field(default_factory=list)
+    health_series: list[dict] = Field(default_factory=list)
     trend: str
+    crop_care: Optional[dict] = None
+    growth_progress: Optional[float] = None
+
+
+class PlantUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=120)
+    planted_on: Optional[date] = None
+    clear_planted_on: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        trimmed = v.strip()
+        return trimmed or None
 
 
 class PlantSummary(BaseModel):

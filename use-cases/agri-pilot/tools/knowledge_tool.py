@@ -38,11 +38,19 @@ def _get_manager() -> ChromaManager:
     return _manager
 
 
-def _build_where(crop: str, disease: Optional[str]) -> dict[str, Any]:
+def _build_where(
+    crop: str,
+    disease: Optional[str] = None,
+    topic: Optional[str] = None,
+) -> dict[str, Any]:
     """Build a Chroma `where` metadata filter from the known fields."""
     conditions: list[dict[str, Any]] = [{"crop": crop.strip().lower()}]
     if disease:
         conditions.append({"disease": disease.strip().lower()})
+    elif topic:
+        conditions.append({"topic": topic.strip().lower()})
+    else:
+        conditions.append({"topic": "disease"})
     if len(conditions) == 1:
         return conditions[0]
     return {"$and": conditions}
@@ -53,10 +61,21 @@ def _query(
     crop: str,
     disease: Optional[str] = None,
     growth_stage: Optional[str] = None,
+    topic: Optional[str] = None,
 ) -> dict[str, Any]:
     """Filtered-retrieval core, separated out so tests can inject a manager."""
-    where = _build_where(crop, disease)
-    query_text = " ".join(part for part in [crop, disease, "treatment"] if part).strip()
+    effective_topic = topic
+    if disease:
+        effective_topic = None
+    elif not effective_topic:
+        effective_topic = "disease"
+    where = _build_where(crop, disease, effective_topic if not disease else None)
+    query_parts = [crop]
+    if disease:
+        query_parts.extend([disease, "treatment"])
+    elif effective_topic:
+        query_parts.append(effective_topic)
+    query_text = " ".join(query_parts).strip()
     results = manager.collection.query(query_texts=[query_text], n_results=3, where=where)
 
     documents = (results.get("documents") or [[]])[0]
@@ -70,6 +89,7 @@ def _query(
             "text": doc,
             "crop": meta.get("crop"),
             "disease": meta.get("disease"),
+            "topic": meta.get("topic"),
             "source": meta.get("source"),
         }
         for doc, meta in zip(documents, metadatas)
@@ -82,23 +102,24 @@ def retrieve_treatment_info(
     crop: str,
     disease: Optional[str] = None,
     growth_stage: Optional[str] = None,
+    topic: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Retrieve verified treatment information for a diagnosed crop problem.
+    """Retrieve verified agricultural information for a crop problem or crop-care question.
 
-    Filters the knowledge base by crop and, if known, disease. Only call
-    this with a crop, and a disease name if one has been diagnosed
-    (e.g. by the vision specialist) — do not guess a disease name. If no
-    verified document matches, `reliable` is False and you must relay
-    `message` to the farmer instead of inventing a treatment. If a result
-    contains "limited": true, relay its message and stop — this check was
-    attempted too many times or timed out.
+    Filters the knowledge base by crop and, when relevant, disease or topic.
+    For treatment, pass crop + disease (do not guess a disease name).
+    For growing, nutrients, or harvest questions, pass crop + topic
+    (cultivation, nutrients, or harvest) and leave disease empty.
+    If only crop is given, defaults to disease/treatment docs.
+    If no verified document matches, `reliable` is False — relay `message`
+    instead of inventing advice.
 
     :param crop: Crop under discussion (e.g. "tomato").
     :param disease: Diagnosed disease name, if known (e.g. "early blight").
     :param growth_stage: Crop growth stage, if known (accepted for future
         filtering; not yet used to narrow results).
+    :param topic: cultivation, nutrients, or harvest for non-disease questions.
     :return: dict with "reliable" (bool), "evidence" (list of matched
-        documents with crop/disease/source), and "message" (the
-        safe-failure message when reliable is False, else None).
+        documents with crop/disease/topic/source), and "message".
     """
-    return _query(_get_manager(), crop, disease, growth_stage)
+    return _query(_get_manager(), crop, disease, growth_stage, topic)

@@ -5,11 +5,12 @@ import 'package:intl/intl.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/start_tracking_crop_banner.dart';
 import '../../auth/domain/models.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../plants/data/plants_repository.dart';
+import '../../plants/presentation/widgets/my_plants_banner.dart';
 import '../data/chat_repository.dart';
+import '../domain/thread_title.dart';
 
 class AdvisorThreadsScreen extends ConsumerStatefulWidget {
   const AdvisorThreadsScreen({super.key});
@@ -20,8 +21,8 @@ class AdvisorThreadsScreen extends ConsumerStatefulWidget {
 
 class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
   List<ThreadSummary> _threads = [];
+  List<PlantSummary> _plants = [];
   var _loading = true;
-  var _showTrackingBanner = false;
   String? _error;
 
   @override
@@ -45,7 +46,7 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
       if (!mounted) return;
       setState(() {
         _threads = results[0] as List<ThreadSummary>;
-        _showTrackingBanner = (results[1] as List<PlantSummary>).isEmpty;
+        _plants = results[1] as List<PlantSummary>;
         _loading = false;
       });
     } catch (e) {
@@ -66,8 +67,13 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
     });
   }
 
+  String _displayName(ThreadSummary thread) {
+    if (!isGenericThreadTitle(thread.name)) return thread.name;
+    return deriveThreadTitle(prompt: thread.name, at: thread.updatedAt);
+  }
+
   void _openThread(ThreadSummary thread) {
-    final name = Uri.encodeQueryComponent(thread.name);
+    final name = Uri.encodeQueryComponent(_displayName(thread));
     context.push('/chat/t/${Uri.encodeComponent(thread.sessionId)}?name=$name').then((_) {
       if (mounted) _refresh();
     });
@@ -110,59 +116,57 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
                   Center(child: CircularProgressIndicator()),
                 ],
               )
-            : _error != null
-                ? ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (_showTrackingBanner) const StartTrackingCropBanner(),
-                      Card(
-                        color: theme.colorScheme.errorContainer,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            _error!,
-                            style: TextStyle(color: theme.colorScheme.onErrorContainer),
+            : CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(child: MyPlantsBanner(plants: _plants)),
+                  if (_error != null)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Card(
+                          color: theme.colorScheme.errorContainer,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              _error!,
+                              style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                  )
-                : _threads.isEmpty
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          if (_showTrackingBanner) const StartTrackingCropBanner(),
-                          EmptyState(
-                            icon: Icons.forum_outlined,
-                            title: 'No conversations yet',
-                            subtitle: 'Start a new chat about crops, diseases, weather, or send a photo for diagnosis.',
-                            actionLabel: 'New conversation',
-                            onAction: _openNewThread,
-                          ),
-                        ],
-                      )
-                    : ListView.separated(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        itemCount: _threads.length + (_showTrackingBanner ? 1 : 0),
-                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
-                        itemBuilder: (context, index) {
-                          if (_showTrackingBanner && index == 0) {
-                            return const StartTrackingCropBanner();
-                          }
-                          final thread = _threads[index - (_showTrackingBanner ? 1 : 0)];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: theme.colorScheme.primaryContainer,
-                              child: Icon(Icons.chat_bubble_outline, color: theme.colorScheme.onPrimaryContainer),
-                            ),
-                            title: Text(thread.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: Text('Updated ${_formatUpdatedAt(thread.updatedAt)}'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _openThread(thread),
-                          );
-                        },
+                    )
+                  else if (_threads.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: EmptyState(
+                        icon: Icons.forum_outlined,
+                        title: 'No conversations yet',
+                        subtitle: 'Start a new chat about crops, diseases, weather, or send a photo for diagnosis.',
+                        actionLabel: 'New conversation',
+                        onAction: _openNewThread,
                       ),
+                    )
+                  else
+                    SliverList.separated(
+                      itemCount: _threads.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
+                      itemBuilder: (context, index) {
+                        final thread = _threads[index];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            child: Icon(Icons.chat_bubble_outline, color: theme.colorScheme.onPrimaryContainer),
+                          ),
+                          title: Text(_displayName(thread), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text('Updated ${_formatUpdatedAt(thread.updatedAt)}'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _openThread(thread),
+                        );
+                      },
+                    ),
+                ],
+              ),
       ),
       floatingActionButton: _threads.isNotEmpty
           ? FloatingActionButton.extended(

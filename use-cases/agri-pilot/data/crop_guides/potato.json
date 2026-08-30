@@ -1,0 +1,50 @@
+{
+  "crop": "potato",
+  "source": "FAO Plant Production and Protection Division — Potato cultivation (illustrative smallholder guide)",
+  "days_to_harvest": {"min": 90, "max": 120},
+  "spacing": "30 cm between plants, 75 cm between rows; hill soil as plants grow.",
+  "how_to_grow": "Plant certified seed tubers 10–15 cm deep in loose, well-drained soil. Hill soil around stems when plants are 15–20 cm tall — repeat until ridges are 20–25 cm high. This protects tubers from greening and sun damage. Rotate with non-solanaceous crops.",
+  "harvest_signs": "Harvest when foliage yellows and dies back, or for new potatoes when flowers fade. Cure harvested tubers in shade for 1–2 weeks before storage. Do not wash before curing.",
+  "stages": [
+    {
+      "id": "establishment",
+      "name": "Establishment",
+      "day_start": 0,
+      "day_end": 25,
+      "watering": "Keep soil evenly moist until sprouts emerge; avoid saturation.",
+      "nutrients": "Mix well-rotted compost into the planting ridge; avoid fresh manure (scab risk)."
+    },
+    {
+      "id": "vegetative",
+      "name": "Vegetative",
+      "day_start": 26,
+      "day_end": 55,
+      "watering": "Regular watering during active growth; 25–40 mm per week equivalent in dry weather.",
+      "nutrients": "Side-dress nitrogen lightly at first hilling if growth is pale; follow local rates."
+    },
+    {
+      "id": "tuber_initiation",
+      "name": "Tuber initiation",
+      "day_start": 56,
+      "day_end": 75,
+      "watering": "Critical period — uneven moisture causes knobby or hollow tubers.",
+      "nutrients": "Shift to potassium and phosphorus; reduce nitrogen to avoid lush tops and small tubers."
+    },
+    {
+      "id": "bulking",
+      "name": "Bulking",
+      "day_start": 76,
+      "day_end": 105,
+      "watering": "Maintain moisture until skins set; reduce watering before harvest.",
+      "nutrients": "Potassium supports tuber size; stop nitrogen applications."
+    },
+    {
+      "id": "harvest",
+      "name": "Harvest",
+      "day_start": 90,
+      "day_end": 130,
+      "watering": "Stop irrigation 1–2 weeks before lifting mature crop.",
+      "nutrients": "No feeding; focus on gentle digging and drying."
+    }
+  ]
+}

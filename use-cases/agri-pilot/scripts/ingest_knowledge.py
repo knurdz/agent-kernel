@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentkernel.knowledgebase.chroma import ChromaManager
 
+from tools.crop_guide import GUIDES_DIR, guide_to_chroma_records, load_crop_guide
+
 DOCS_DIR = Path(__file__).resolve().parent.parent / "data" / "knowledge_docs"
 PERSIST_PATH = str(Path(__file__).resolve().parent.parent / "data" / "chroma_db")
 COLLECTION_NAME = "agri_knowledge"
@@ -37,16 +39,24 @@ def parse_doc(path: Path) -> dict:
         key, _, value = line.partition(":")
         if key.strip():
             metadata[key.strip().lower()] = value.strip().lower()
+    if "topic" not in metadata and metadata.get("disease"):
+        metadata["topic"] = "disease"
     return {"text": body.strip(), "metadata": metadata}
 
 
 def main() -> None:
     files = sorted(DOCS_DIR.glob("*.md"))
-    if not files:
-        print(f"No documents found in {DOCS_DIR}")
-        return
-
     records = [parse_doc(f) for f in files]
+
+    guide_files = sorted(GUIDES_DIR.glob("*.json")) if GUIDES_DIR.is_dir() else []
+    for path in guide_files:
+        guide = load_crop_guide(path.stem)
+        if guide:
+            records.extend(guide_to_chroma_records(guide))
+
+    if not records:
+        print(f"No documents found in {DOCS_DIR} or {GUIDES_DIR}")
+        return
     manager = ChromaManager(
         persist_path=PERSIST_PATH,
         name="agri_kb",

@@ -33,12 +33,36 @@ class PlantsRepository {
     }
   }
 
-  Future<PlantSummary> createPlant({required String crop, String? name, int? listingId}) async {
+  Future<PlantSummary> createPlant({
+    required String crop,
+    String? name,
+    int? listingId,
+    DateTime? plantedOn,
+  }) async {
     try {
       final resp = await _dio.post('/api/farmer/plants', data: {
         'crop': crop,
         if (name != null && name.isNotEmpty) 'name': name,
         if (listingId != null) 'listing_id': listingId,
+        if (plantedOn != null) 'planted_on': plantedOn.toIso8601String().split('T').first,
+      });
+      return PlantSummary.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<PlantSummary> updatePlant(
+    int id, {
+    String? name,
+    DateTime? plantedOn,
+    bool clearPlantedOn = false,
+  }) async {
+    try {
+      final resp = await _dio.patch('/api/farmer/plants/$id', data: {
+        if (name != null) 'name': name,
+        if (plantedOn != null) 'planted_on': plantedOn.toIso8601String().split('T').first,
+        if (clearPlantedOn) 'clear_planted_on': true,
       });
       return PlantSummary.fromJson(resp.data as Map<String, dynamic>);
     } on DioException catch (e) {
