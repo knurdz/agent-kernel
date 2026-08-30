@@ -5,19 +5,24 @@ Gated by JWT + farmer role + active subscription (owner decision #3).
 
 from __future__ import annotations
 
+import io
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from marketplace.auth import get_current_user, require_active_subscription, require_role
+from marketplace.auth import get_current_user
 from marketplace.database import get_db
-from marketplace.models import Listing, User
+from marketplace.listing_media import resolve_photo_path, save_listing_photo
+from marketplace.listing_serializers import listing_to_response, listings_to_responses
+from marketplace.models import User
 from marketplace.schemas import (
     BuyerPublic,
     ConnectionResponse,
     ConnectionWithListingAndBuyer,
     ContactResponse,
+    ListingAnalytics,
     ListingCreate,
     ListingResponse,
     ListingUpdate,
@@ -29,20 +34,22 @@ from marketplace.service import (
     delete_listing,
     get_connection_contact,
     get_listing,
+    get_listing_analytics,
     list_farmer_connections,
     list_own_listings,
+    save_listing_image,
     update_connection_status,
     update_listing,
 )
 
 router = APIRouter(prefix="/api/farmer", tags=["farmer"])
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
 
 def _farmer_active(user: User = Depends(get_current_user)) -> User:
-    # role + subscription in one dependency
     if user.role != "farmer":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="farmer role required")
-    # reuse helper logic inline to keep single Depends surface
     import os
 
     if os.environ.get("AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK") == "1":
@@ -55,6 +62,16 @@ def _farmer_active(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+async def _read_upload(upload: UploadFile) -> tuple[bytes, str]:
+    data = await upload.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="image too large (max 10 MB)")
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="empty upload")
+    filename = upload.filename or "photo.jpg"
+    return data, filename
+
+
 @router.post("/listings", response_model=ListingResponse, status_code=status.HTTP_201_CREATED)
 def post_listing(payload: ListingCreate, db: Session = Depends(get_db), farmer: User = Depends(_farmer_active)):
     try:
@@ -65,10 +82,12 @@ def post_listing(payload: ListingCreate, db: Session = Depends(get_db), farmer: 
             quantity_kg=payload.quantity_kg,
             price_per_kg=payload.price_per_kg,
             harvest_date=payload.harvest_date,
+            category=payload.category,
+            description=payload.description,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return listing
+    return listing_to_response(db, listing, audience="farmer")
 
 
 @router.get("/listings", response_model=PaginatedListings)
@@ -83,7 +102,74 @@ def get_my_listings(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid status")
     items = list_own_listings(db, farmer.id, status=status, limit=limit, offset=offset)
     total = count_own_listings(db, farmer.id, status=status)
-    return PaginatedListings(items=items, total=total, limit=limit, offset=offset)
+    return PaginatedListings(
+        items=listings_to_responses(db, items, audience="farmer"),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/listings/{listing_id}", response_model=ListingResponse)
+def get_my_listing_detail(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    listing = get_listing(db, listing_id)
+    if not listing or listing.farmer_id != farmer.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
+    return listing_to_response(db, listing, audience="farmer")
+
+
+@router.get("/listings/{listing_id}/analytics", response_model=ListingAnalytics)
+def get_my_listing_analytics(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    analytics = get_listing_analytics(db, farmer.id, listing_id)
+    if not analytics:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
+    return ListingAnalytics(**analytics)
+
+
+@router.post("/listings/{listing_id}/photo", response_model=ListingResponse)
+async def post_listing_photo(
+    listing_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    listing = get_listing(db, listing_id)
+    if not listing or listing.farmer_id != farmer.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
+    data, filename = await _read_upload(image)
+    rel_path = save_listing_photo(farmer.id, listing_id, io.BytesIO(data), filename)
+    updated = save_listing_image(db, farmer.id, listing_id, rel_path)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
+    return listing_to_response(db, updated, audience="farmer")
+
+
+@router.get("/listings/{listing_id}/photo")
+def get_listing_photo(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    farmer: User = Depends(_farmer_active),
+):
+    listing = get_listing(db, listing_id)
+    if not listing or listing.farmer_id != farmer.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
+    if not listing.image_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found")
+    try:
+        path = resolve_photo_path(listing.image_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found") from exc
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found")
+    return FileResponse(path)
 
 
 @router.patch("/listings/{listing_id}", response_model=ListingResponse)
@@ -97,15 +183,13 @@ def patch_listing(
     if not existing or existing.farmer_id != farmer.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
     patch = payload.model_dump(exclude_unset=True, exclude_none=False)
-    # Don't pass None for unset fields; pydantic's exclude_unset already handles it.
-    # But explicit None for price/harvest should be passed.
     try:
         updated = update_listing(db, farmer.id, listing_id, patch)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
-    return updated
+    return listing_to_response(db, updated, audience="farmer")
 
 
 @router.delete("/listings/{listing_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -145,7 +229,7 @@ def get_farmer_connections(
                 message=c.message,
                 created_at=c.created_at,
                 updated_at=c.updated_at,
-                listing=listing,  # type: ignore[arg-type]
+                listing=listing_to_response(db, listing, audience="farmer") if listing else None,  # type: ignore[arg-type]
                 buyer=buyer_pub,
             )
         )
@@ -159,7 +243,6 @@ def patch_connection(
     db: Session = Depends(get_db),
     farmer: User = Depends(_farmer_active),
 ):
-    # Expect {"status": "accepted"|"declined"|"completed"}
     new_status = payload.get("status") if isinstance(payload, dict) else None  # type: ignore[union-attr]
     if new_status not in {"accepted", "declined", "completed"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid status")

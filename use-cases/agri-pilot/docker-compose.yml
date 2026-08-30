@@ -61,8 +61,10 @@ services:
     volumes:
       - chroma-cache:/root/.cache/chroma # keep the ONNX embedding model across rebuilds
       - plant-media:/app/data/plant_media
+      - listing-media:/app/data/listing_media
 volumes:
   pgdata:
   redisdata:
   chroma-cache:
   plant-media:
+  listing-media:

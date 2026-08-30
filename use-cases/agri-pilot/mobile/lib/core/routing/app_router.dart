@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/domain/models.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/signup_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
@@ -14,6 +15,8 @@ import '../../features/delivery/presentation/orders_list_screens.dart';
 import '../../features/plants/presentation/plant_detail_screen.dart';
 import '../../features/plants/presentation/plant_list_screen.dart';
 import '../../features/plants/presentation/quick_scan_screen.dart';
+import '../../features/marketplace/presentation/listing_detail_screen.dart';
+import '../../features/marketplace/presentation/listing_insights_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../shell/home_screen.dart';
 import '../shell/main_shell.dart';
@@ -65,6 +68,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         path: ':plantId',
                         builder: (_, state) => PlantDetailScreen(
                           plantId: int.parse(state.pathParameters['plantId']!),
+                        ),
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    path: 'listings/:listingId',
+                    builder: (_, state) => ListingDetailScreen(
+                      listingId: int.parse(state.pathParameters['listingId']!),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'insights',
+                        builder: (_, state) => ListingInsightsScreen(
+                          listingId: int.parse(state.pathParameters['listingId']!),
+                          listing: state.extra as Listing?,
                         ),
                       ),
                     ],

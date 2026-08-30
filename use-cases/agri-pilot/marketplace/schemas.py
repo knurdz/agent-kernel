@@ -88,11 +88,16 @@ class MeResponse(BaseModel):
     profile: Optional[ProfileOut] = None
 
 
+ListingCategoryLiteral = Literal["vegetable", "fruit", "grain", "spice", "other"]
+
+
 class ListingCreate(BaseModel):
     crop: str = Field(min_length=1, max_length=80)
     quantity_kg: float = Field(gt=0)
     price_per_kg: Optional[float] = Field(default=None, ge=0)
     harvest_date: Optional[date] = None
+    category: ListingCategoryLiteral = "vegetable"
+    description: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("crop")
     @classmethod
@@ -102,6 +107,14 @@ class ListingCreate(BaseModel):
             raise ValueError("crop must be non-empty")
         return v.lower()
 
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        trimmed = v.strip()
+        return trimmed or None
+
 
 class ListingUpdate(BaseModel):
     crop: Optional[str] = Field(default=None, min_length=1, max_length=80)
@@ -109,6 +122,8 @@ class ListingUpdate(BaseModel):
     price_per_kg: Optional[float] = Field(default=None, ge=0)
     harvest_date: Optional[date] = None
     status: Optional[Literal["active", "sold", "expired", "cancelled"]] = None
+    category: Optional[ListingCategoryLiteral] = None
+    description: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("crop")
     @classmethod
@@ -119,6 +134,14 @@ class ListingUpdate(BaseModel):
         if not v:
             raise ValueError("crop must be non-empty")
         return v.lower()
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        trimmed = v.strip()
+        return trimmed or None
 
 
 class ListingResponse(BaseModel):
@@ -132,8 +155,32 @@ class ListingResponse(BaseModel):
     plant_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    category: ListingCategoryLiteral = "vegetable"
+    description: Optional[str] = None
+    view_count: int = 0
+    photo_url: Optional[str] = None
+    available_kg: Optional[float] = None
+    reserved_quantity_kg: Optional[float] = None
+    farmer_name: Optional[str] = None
+    district: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class ListingAnalytics(BaseModel):
+    listing_id: int
+    view_count: int
+    connections_pending: int = 0
+    connections_accepted: int = 0
+    connections_declined: int = 0
+    connections_completed: int = 0
+    order_count: int = 0
+    kg_sold: float = 0.0
+    kg_reserved: float = 0.0
+    quantity_kg: float
+    reserved_quantity_kg: float
+    available_kg: float
+    estimated_revenue: float = 0.0
 
 
 class PaginatedListings(BaseModel):
@@ -199,10 +246,18 @@ class ConnectionWithListingAndBuyer(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ListingHealthSummary(BaseModel):
+    tracked: bool
+    trend: Optional[str] = None
+    latest_label: Optional[str] = None
+
+
 class MatchItem(BaseModel):
     listing: ListingResponse
     score: int
     reason: str
+    district: Optional[str] = None
+    health: Optional[ListingHealthSummary] = None
 
 
 class MatchResponse(BaseModel):
@@ -416,7 +471,10 @@ class ListingInsights(BaseModel):
     latest_label: Optional[str] = None
     latest_confidence: Optional[float] = None
     timeline: list[dict] = Field(default_factory=list)
+    health_series: list[dict] = Field(default_factory=list)
     trend: str
+    crop_care: Optional[dict] = None
+    growth_progress: Optional[float] = None
 
 
 class OrderCreate(BaseModel):

@@ -9,6 +9,7 @@ import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/domain/models.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../plants/data/plants_repository.dart';
 import '../../plants/presentation/widgets/my_plants_banner.dart';
 import '../data/chat_repository.dart';
@@ -51,18 +52,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   List<PlantSummary> _plants = [];
   File? _pendingImage;
 
-  static const _promptChips = [
+  static const _farmerPromptChips = [
     "What's wrong with my tomato leaves?",
     'When should I irrigate my crop?',
     'How do I treat early blight?',
   ];
+
+  static const _buyerPromptChips = [
+    'Find tomatoes near Kandy',
+    'Best 200kg rice match',
+    'Where is my rider?',
+    'Pickup or delivery?',
+  ];
+
+  static const _riderPromptChips = [
+    'What jobs are nearby?',
+    "What's my active delivery?",
+    'How do I go online?',
+    'What is the buyer PIN for?',
+  ];
+
+  bool get _isFarmer => ref.read(authControllerProvider).asData?.value?.isFarmer == true;
+  bool get _isBuyer => ref.read(authControllerProvider).asData?.value?.isBuyer == true;
+  bool get _isRider => ref.read(authControllerProvider).asData?.value?.isRider == true;
 
   @override
   void initState() {
     super.initState();
     _title = isGenericThreadTitle(widget.threadName) ? 'New conversation' : widget.threadName!.trim();
     _loadHistory();
-    _loadPlants();
+    if (_isFarmer) {
+      _loadPlants();
+    }
     final prompt = widget.initialPrompt;
     if (prompt != null && prompt.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _send(presetText: prompt));
@@ -148,7 +169,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final pending = image ?? _pendingImage;
     final text = presetText ?? _controller.text.trim();
     if (text.isEmpty && pending == null) return;
-    final prompt = text.isEmpty ? 'Diagnose this crop' : text;
+    final defaultPhotoPrompt = _isBuyer ? 'Is this produce okay?' : 'Diagnose this crop';
+    final prompt = text.isEmpty ? defaultPhotoPrompt : text;
     final threadName = _threadNameForSend(prompt, hasPhoto: pending != null);
     setState(() {
       _loading = true;
@@ -231,24 +253,58 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 _pickPhoto(ImageSource.gallery);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.document_scanner_outlined),
-              title: const Text('Quick scan (structured result)'),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.push('/chat/scan');
-              },
-            ),
+            if (_isFarmer)
+              ListTile(
+                leading: const Icon(Icons.document_scanner_outlined),
+                title: const Text('Quick scan (structured result)'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/chat/scan');
+                },
+              ),
           ],
         ),
       ),
     );
   }
 
+  List<String> get _promptChips {
+    if (_isBuyer) return _buyerPromptChips;
+    if (_isRider) return _riderPromptChips;
+    return _farmerPromptChips;
+  }
+
+  String _emptyTitle({required bool isBuyer, required bool isRider}) {
+    if (isRider) return 'Your delivery assistant';
+    if (isBuyer) return 'Your marketplace assistant';
+    return 'Your AI farming advisor';
+  }
+
+  String _emptySubtitle({required bool isBuyer, required bool isRider}) {
+    if (isRider) {
+      return 'Ask about nearby jobs, your active delivery, going online, or the buyer PIN at drop-off.';
+    }
+    if (isBuyer) {
+      return 'Find crops, compare farm health on listings, check orders, or ask about pickup vs delivery.';
+    }
+    return 'Ask about crops, diseases, weather, or send a photo for diagnosis.';
+  }
+
+  String _inputHint({required bool isBuyer, required bool isRider, required bool hasPendingPhoto}) {
+    if (hasPendingPhoto) return 'Add a message (optional)…';
+    if (isRider) return 'Jobs, active delivery, go online...';
+    if (isBuyer) return 'Find crops, orders, delivery...';
+    return 'Ask about crops, weather...';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final itemCount = _messages.length + (_loading ? 1 : 0);
+    final isFarmer = ref.watch(authControllerProvider).asData?.value?.isFarmer == true;
+    final isBuyer = ref.watch(authControllerProvider).asData?.value?.isBuyer == true;
+    final isRider = ref.watch(authControllerProvider).asData?.value?.isRider == true;
+    final showPhotoAttach = isFarmer || isBuyer;
 
     return Scaffold(
       appBar: AppBar(
@@ -256,17 +312,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
       body: Column(
         children: [
-          MyPlantsBanner(plants: _plants, compact: true),
+          if (isFarmer) MyPlantsBanner(plants: _plants, compact: true),
           Expanded(
             child: !_initialized
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty && !_loading
                     ? EmptyState(
                         icon: Icons.smart_toy_outlined,
-                        title: 'Your AI farming advisor',
-                        subtitle: 'Ask about crops, diseases, weather, or send a photo for diagnosis.',
-                        actionLabel: 'Diagnose a crop',
-                        onAction: _showAttachOptions,
+                        title: _emptyTitle(isBuyer: isBuyer, isRider: isRider),
+                        subtitle: _emptySubtitle(isBuyer: isBuyer, isRider: isRider),
+                        actionLabel: isRider
+                            ? 'Find jobs'
+                            : isBuyer
+                                ? 'Find crops'
+                                : 'Diagnose a crop',
+                        onAction: isRider
+                            ? () => _send(presetText: _riderPromptChips.first)
+                            : isBuyer
+                                ? () => _send(presetText: _buyerPromptChips.first)
+                                : _showAttachOptions,
                       )
                     : ListView.builder(
                         controller: _scrollController,
@@ -318,30 +382,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.push('/chat/scan'),
-                      icon: const Icon(Icons.document_scanner_outlined, size: 18),
-                      label: const Text('Quick scan'),
+            if (isFarmer)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push('/chat/scan'),
+                        icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                        label: const Text('Quick scan'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.go('/home/plants'),
-                      icon: const Icon(Icons.eco_outlined, size: 18),
-                      label: const Text('My plants'),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.go('/home/plants'),
+                        icon: const Icon(Icons.eco_outlined, size: 18),
+                        label: const Text('My plants'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
           ],
-          if (_pendingImage != null)
+          if (_pendingImage != null && showPhotoAttach)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
               child: Align(
@@ -381,10 +446,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  IconButton(
-                    onPressed: _loading ? null : _showAttachOptions,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                  ),
+                  if (showPhotoAttach)
+                    IconButton(
+                      onPressed: _loading ? null : _showAttachOptions,
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                    ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
@@ -392,9 +458,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       minLines: 1,
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
-                        hintText: _pendingImage != null
-                            ? 'Add a message (optional)…'
-                            : 'Ask about crops, weather...',
+                        hintText: _inputHint(
+                          isBuyer: isBuyer,
+                          isRider: isRider,
+                          hasPendingPhoto: _pendingImage != null,
+                        ),
                         filled: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         border: OutlineInputBorder(

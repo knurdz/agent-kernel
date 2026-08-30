@@ -25,6 +25,8 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
   var _loading = true;
   String? _error;
 
+  bool get _isFarmer => ref.read(authControllerProvider).asData?.value?.isFarmer == true;
+
   @override
   void initState() {
     super.initState();
@@ -39,14 +41,15 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
     try {
       final repo = ref.read(chatRepositoryProvider);
       final plantsRepo = ref.read(plantsRepositoryProvider);
-      final results = await Future.wait([
-        repo.listThreads(),
-        plantsRepo.listPlants().catchError((_) => <PlantSummary>[]),
-      ]);
+      final futures = <Future<dynamic>>[repo.listThreads()];
+      if (_isFarmer) {
+        futures.add(plantsRepo.listPlants().catchError((_) => <PlantSummary>[]));
+      }
+      final results = await Future.wait(futures);
       if (!mounted) return;
       setState(() {
         _threads = results[0] as List<ThreadSummary>;
-        _plants = results[1] as List<PlantSummary>;
+        _plants = _isFarmer && results.length > 1 ? results[1] as List<PlantSummary> : [];
         _loading = false;
       });
     } catch (e) {
@@ -94,6 +97,9 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isFarmer = ref.watch(authControllerProvider).asData?.value?.isFarmer == true;
+    final isBuyer = ref.watch(authControllerProvider).asData?.value?.isBuyer == true;
+    final isRider = ref.watch(authControllerProvider).asData?.value?.isRider == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -119,7 +125,7 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
             : CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
-                  SliverToBoxAdapter(child: MyPlantsBanner(plants: _plants)),
+                  if (isFarmer) SliverToBoxAdapter(child: MyPlantsBanner(plants: _plants)),
                   if (_error != null)
                     SliverToBoxAdapter(
                       child: Padding(
@@ -142,7 +148,11 @@ class _AdvisorThreadsScreenState extends ConsumerState<AdvisorThreadsScreen> {
                       child: EmptyState(
                         icon: Icons.forum_outlined,
                         title: 'No conversations yet',
-                        subtitle: 'Start a new chat about crops, diseases, weather, or send a photo for diagnosis.',
+                        subtitle: isRider
+                            ? 'Ask about nearby jobs, active deliveries, going online, or buyer PIN at drop-off.'
+                            : isBuyer
+                                ? 'Ask about finding crops, farm health on listings, orders, or delivery.'
+                                : 'Start a new chat about crops, diseases, weather, or send a photo for diagnosis.',
                         actionLabel: 'New conversation',
                         onAction: _openNewThread,
                       ),

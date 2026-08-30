@@ -82,6 +82,16 @@ class Listing {
     required this.status,
     this.plantId,
     required this.createdAt,
+    this.updatedAt,
+    this.category = 'vegetable',
+    this.description,
+    this.viewCount = 0,
+    this.photoUrl,
+    this.availableKg,
+    this.reservedQuantityKg,
+    this.farmerName,
+    this.district,
+    this.harvestDate,
   });
 
   factory Listing.fromJson(Map<String, dynamic> json) => Listing(
@@ -93,6 +103,17 @@ class Listing {
         status: json['status'] as String,
         plantId: json['plant_id'] as int?,
         createdAt: DateTime.parse(json['created_at'] as String),
+        updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : null,
+        category: json['category'] as String? ?? 'vegetable',
+        description: json['description'] as String?,
+        viewCount: json['view_count'] as int? ?? 0,
+        photoUrl: json['photo_url'] as String?,
+        availableKg: json['available_kg'] != null ? (json['available_kg'] as num).toDouble() : null,
+        reservedQuantityKg:
+            json['reserved_quantity_kg'] != null ? (json['reserved_quantity_kg'] as num).toDouble() : null,
+        farmerName: json['farmer_name'] as String?,
+        district: json['district'] as String?,
+        harvestDate: json['harvest_date'] != null ? DateTime.parse(json['harvest_date'] as String) : null,
       );
 
   final int id;
@@ -103,8 +124,86 @@ class Listing {
   final String status;
   final int? plantId;
   final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String category;
+  final String? description;
+  final int viewCount;
+  final String? photoUrl;
+  final double? availableKg;
+  final double? reservedQuantityKg;
+  final String? farmerName;
+  final String? district;
+  final DateTime? harvestDate;
 
   bool get isTracked => plantId != null;
+
+  double get displayQuantityKg => availableKg ?? quantityKg;
+
+  String get categoryLabel {
+    switch (category) {
+      case 'fruit':
+        return 'Fruit';
+      case 'grain':
+        return 'Grain';
+      case 'spice':
+        return 'Spice';
+      case 'other':
+        return 'Other';
+      default:
+        return 'Vegetable';
+    }
+  }
+}
+
+class ListingAnalytics {
+  ListingAnalytics({
+    required this.listingId,
+    required this.viewCount,
+    required this.connectionsPending,
+    required this.connectionsAccepted,
+    required this.connectionsDeclined,
+    required this.connectionsCompleted,
+    required this.orderCount,
+    required this.kgSold,
+    required this.kgReserved,
+    required this.quantityKg,
+    required this.reservedQuantityKg,
+    required this.availableKg,
+    required this.estimatedRevenue,
+  });
+
+  factory ListingAnalytics.fromJson(Map<String, dynamic> json) => ListingAnalytics(
+        listingId: json['listing_id'] as int,
+        viewCount: json['view_count'] as int? ?? 0,
+        connectionsPending: json['connections_pending'] as int? ?? 0,
+        connectionsAccepted: json['connections_accepted'] as int? ?? 0,
+        connectionsDeclined: json['connections_declined'] as int? ?? 0,
+        connectionsCompleted: json['connections_completed'] as int? ?? 0,
+        orderCount: json['order_count'] as int? ?? 0,
+        kgSold: (json['kg_sold'] as num?)?.toDouble() ?? 0,
+        kgReserved: (json['kg_reserved'] as num?)?.toDouble() ?? 0,
+        quantityKg: (json['quantity_kg'] as num).toDouble(),
+        reservedQuantityKg: (json['reserved_quantity_kg'] as num?)?.toDouble() ?? 0,
+        availableKg: (json['available_kg'] as num).toDouble(),
+        estimatedRevenue: (json['estimated_revenue'] as num?)?.toDouble() ?? 0,
+      );
+
+  final int listingId;
+  final int viewCount;
+  final int connectionsPending;
+  final int connectionsAccepted;
+  final int connectionsDeclined;
+  final int connectionsCompleted;
+  final int orderCount;
+  final double kgSold;
+  final double kgReserved;
+  final double quantityKg;
+  final double reservedQuantityKg;
+  final double availableKg;
+  final double estimatedRevenue;
+
+  int get totalConnections =>
+      connectionsPending + connectionsAccepted + connectionsDeclined + connectionsCompleted;
 }
 
 class ConnectionItem {
@@ -493,7 +592,10 @@ class ListingInsights {
     this.latestLabel,
     this.latestConfidence,
     required this.timeline,
+    required this.healthSeries,
     required this.trend,
+    this.cropCare,
+    this.growthProgress,
   });
 
   factory ListingInsights.fromJson(Map<String, dynamic> json) => ListingInsights(
@@ -506,7 +608,12 @@ class ListingInsights {
         latestLabel: json['latest_label'] as String?,
         latestConfidence: json['latest_confidence'] != null ? (json['latest_confidence'] as num).toDouble() : null,
         timeline: (json['timeline'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
+        healthSeries: (json['health_series'] as List<dynamic>? ?? [])
+            .map((e) => HealthPoint.fromJson(e as Map<String, dynamic>))
+            .toList(),
         trend: json['trend'] as String? ?? 'unknown',
+        cropCare: json['crop_care'] != null ? CropCare.fromJson(json['crop_care'] as Map<String, dynamic>) : null,
+        growthProgress: json['growth_progress'] != null ? (json['growth_progress'] as num).toDouble() : null,
       );
 
   final int listingId;
@@ -518,7 +625,37 @@ class ListingInsights {
   final String? latestLabel;
   final double? latestConfidence;
   final List<Map<String, dynamic>> timeline;
+  final List<HealthPoint> healthSeries;
   final String trend;
+  final CropCare? cropCare;
+  final double? growthProgress;
+}
+
+class MatchResult {
+  MatchResult({
+    required this.listing,
+    required this.score,
+    required this.reason,
+    this.district,
+    this.healthTrend,
+  });
+
+  factory MatchResult.fromJson(Map<String, dynamic> json) {
+    final health = json['health'] as Map<String, dynamic>?;
+    return MatchResult(
+      listing: Listing.fromJson(json['listing'] as Map<String, dynamic>),
+      score: json['score'] as int? ?? 0,
+      reason: json['reason'] as String? ?? '',
+      district: json['district'] as String?,
+      healthTrend: health?['trend'] as String?,
+    );
+  }
+
+  final Listing listing;
+  final int score;
+  final String reason;
+  final String? district;
+  final String? healthTrend;
 }
 
 class OrderItem {

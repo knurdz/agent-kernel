@@ -109,11 +109,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     Chip(
                       avatar: Icon(
-                        user.isFarmer ? Icons.grass : Icons.storefront_outlined,
+                        user.isFarmer
+                            ? Icons.grass
+                            : user.isRider
+                                ? Icons.local_shipping_outlined
+                                : Icons.storefront_outlined,
                         size: 18,
                         color: theme.colorScheme.primary,
                       ),
-                      label: Text(user.isFarmer ? 'Farmer' : 'Buyer'),
+                      label: Text(
+                        user.isFarmer
+                            ? 'Farmer'
+                            : user.isRider
+                                ? 'Rider'
+                                : 'Buyer',
+                      ),
                     ),
                     if (user.isFarmer)
                       StatusChip(status: user.subscriptionStatus == 'active' ? 'active' : 'expired'),

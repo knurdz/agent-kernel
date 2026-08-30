@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/shell/main_shell.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -106,6 +109,12 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
     }
   }
 
+  void _openListing(Listing listing) {
+    context.push('/home/listings/${listing.id}').then((deleted) {
+      if (deleted == true) _refresh();
+    });
+  }
+
   void _showListingActions(Listing listing) {
     showModalBottomSheet<void>(
       context: context,
@@ -114,6 +123,15 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Manage listing'),
+              subtitle: const Text('Update stock, price, photo and analytics'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openListing(listing);
+              },
+            ),
             if (!listing.isTracked)
               ListTile(
                 leading: const Icon(Icons.eco_outlined),
@@ -217,7 +235,7 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
                     ..._listings.map(
                       (l) => ListingCard(
                         listing: l,
-                        onTap: () => _showListingActions(l),
+                        onTap: () => _openListing(l),
                         trailing: IconButton(
                           icon: const Icon(Icons.more_vert),
                           onPressed: () => _showListingActions(l),
@@ -242,8 +260,14 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
   late final TextEditingController _crop;
   late final TextEditingController _qty;
   late final TextEditingController _price;
+  late final TextEditingController _description;
   String? _formError;
   var _submitting = false;
+  File? _photo;
+  String _category = 'vegetable';
+  DateTime? _harvestDate;
+
+  static const _categories = ['vegetable', 'fruit', 'grain', 'spice', 'other'];
 
   @override
   void initState() {
@@ -251,6 +275,7 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
     _crop = TextEditingController();
     _qty = TextEditingController();
     _price = TextEditingController();
+    _description = TextEditingController();
   }
 
   @override
@@ -258,7 +283,24 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
     _crop.dispose();
     _qty.dispose();
     _price.dispose();
+    _description.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: source, maxWidth: 1920, imageQuality: 85);
+    if (file != null) setState(() => _photo = File(file.path));
+  }
+
+  Future<void> _pickHarvestDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _harvestDate = picked);
   }
 
   Future<void> _dismissSheet({required bool success}) async {
@@ -289,11 +331,20 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
       _formError = null;
     });
     try {
-      await ref.read(marketplaceRepositoryProvider).createListing(
-            crop: cropVal,
-            qty: qtyVal,
-            price: priceVal,
-          );
+      final repo = ref.read(marketplaceRepositoryProvider);
+      final listing = await repo.createListing(
+        crop: cropVal,
+        qty: qtyVal,
+        price: priceVal,
+        category: _category,
+        description: _description.text.trim().isEmpty ? null : _description.text.trim(),
+        harvestDate: _harvestDate != null
+            ? '${_harvestDate!.year}-${_harvestDate!.month.toString().padLeft(2, '0')}-${_harvestDate!.day.toString().padLeft(2, '0')}'
+            : null,
+      );
+      if (_photo != null) {
+        await repo.uploadListingPhoto(listing.id, _photo!);
+      }
       await _dismissSheet(success: true);
     } catch (e) {
       if (mounted) {
@@ -302,6 +353,21 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
           _formError = e.toString();
         });
       }
+    }
+  }
+
+  String _categoryLabel(String c) {
+    switch (c) {
+      case 'fruit':
+        return 'Fruit';
+      case 'grain':
+        return 'Grain';
+      case 'spice':
+        return 'Spice';
+      case 'other':
+        return 'Other';
+      default:
+        return 'Vegetable';
     }
   }
 
@@ -314,53 +380,139 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
         top: 8,
         bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'New listing',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'New listing',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: _submitting
+                  ? null
+                  : () => showModalBottomSheet<void>(
+                        context: context,
+                        showDragHandle: true,
+                        builder: (ctx) => SafeArea(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.camera_alt_outlined),
+                                title: const Text('Take photo'),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _pickPhoto(ImageSource.camera);
+                                },
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.photo_library_outlined),
+                                title: const Text('Choose from gallery'),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _pickPhoto(ImageSource.gallery);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _crop,
-            decoration: const InputDecoration(
-              labelText: 'Crop',
-              hintText: 'e.g. tomato',
+                child: _photo != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(_photo!, fit: BoxFit.cover, width: double.infinity),
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_a_photo_outlined, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(height: 4),
+                          Text('Add photo (optional)', style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+              ),
             ),
-            textCapitalization: TextCapitalization.words,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _qty,
-            decoration: const InputDecoration(
-              labelText: 'Quantity (kg)',
-              hintText: '500',
+            const SizedBox(height: 16),
+            TextField(
+              controller: _crop,
+              decoration: const InputDecoration(
+                labelText: 'Crop',
+                hintText: 'e.g. tomato',
+              ),
+              textCapitalization: TextCapitalization.words,
             ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _price,
-            decoration: const InputDecoration(
-              labelText: 'Price per kg (optional)',
-              hintText: '120',
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _category,
+              decoration: const InputDecoration(labelText: 'Category'),
+              items: _categories
+                  .map((c) => DropdownMenuItem(value: c, child: Text(_categoryLabel(c))))
+                  .toList(),
+              onChanged: _submitting ? null : (v) => setState(() => _category = v ?? 'vegetable'),
             ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          if (_formError != null) ...[
-            const SizedBox(height: 8),
-            Text(_formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _description,
+              decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+                hintText: 'Fresh organic tomatoes...',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _qty,
+              decoration: const InputDecoration(
+                labelText: 'Quantity (kg)',
+                hintText: '500',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _price,
+              decoration: const InputDecoration(
+                labelText: 'Price per kg (optional)',
+                hintText: '120',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Harvest date (optional)'),
+              subtitle: Text(
+                _harvestDate != null
+                    ? '${_harvestDate!.day}/${_harvestDate!.month}/${_harvestDate!.year}'
+                    : 'Not set',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.calendar_today),
+                onPressed: _submitting ? null : _pickHarvestDate,
+              ),
+            ),
+            if (_formError != null) ...[
+              const SizedBox(height: 8),
+              Text(_formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _submitting ? null : _submit,
+              child: const Text('Create listing'),
+            ),
           ],
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _submitting ? null : _submit,
-            child: const Text('Create listing'),
-          ),
-        ],
+        ),
       ),
     );
   }

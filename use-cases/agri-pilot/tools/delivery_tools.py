@@ -4,10 +4,39 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from agentkernel.core.tool import ToolContext
-
 from tools.marketplace_tools import _get_session_identity
 from tools.tool_guard import guarded
+
+
+def _rider_delivery_summary(detail: dict) -> dict[str, Any]:
+    pickup = detail.get("pickup") or {}
+    delivery = detail.get("delivery") or {}
+    return {
+        "delivery_id": detail.get("delivery_id"),
+        "order_id": detail.get("order_id"),
+        "status": detail.get("status"),
+        "order_status": detail.get("order_status"),
+        "crop": detail.get("crop"),
+        "quantity_kg": detail.get("quantity_kg"),
+        "pickup_label": pickup.get("address_label"),
+        "delivery_label": delivery.get("address_label"),
+        "route_duration_s": detail.get("route_duration_s"),
+        "route_distance_m": detail.get("route_distance_m"),
+    }
+
+
+def _nearby_jobs_hint(db, user) -> Optional[str]:
+    from marketplace.delivery_utils import valid_coordinate
+    from marketplace.dispatch_service import _get_or_create_rider_profile, get_active_delivery
+
+    rp = _get_or_create_rider_profile(db, user)
+    if get_active_delivery(db, user):
+        return "has_active_job"
+    if not rp.is_online:
+        return "offline"
+    if not valid_coordinate(rp.latitude, rp.longitude):
+        return "no_gps"
+    return "none_nearby"
 
 
 @guarded
@@ -17,9 +46,10 @@ def my_orders_tool(limit: int = 10) -> dict[str, Any]:
     if uid is None:
         return {"ok": False, "error": "not authenticated — log in via the app"}
     from marketplace.database import SessionLocal
+    from marketplace.dispatch_service import get_delivery_detail, list_rider_deliveries
+    from marketplace.models import User
     from marketplace.order_serializers import order_to_response
     from marketplace.order_service import list_buyer_orders, list_farmer_orders
-    from marketplace.dispatch_service import list_rider_deliveries
 
     db = SessionLocal()
     try:
@@ -32,14 +62,20 @@ def my_orders_tool(limit: int = 10) -> dict[str, Any]:
             if not user:
                 return {"ok": False, "error": "user not found"}
             deliveries = list_rider_deliveries(db, user, limit=limit)
-            return {
-                "ok": True,
-                "role": role,
-                "deliveries": [
-                    {"delivery_id": d.id, "order_id": d.order_id, "status": d.status, "rider_id": d.rider_id}
-                    for d in deliveries
-                ],
-            }
+            items = []
+            for d in deliveries:
+                try:
+                    detail = get_delivery_detail(db, d.id, user)
+                    items.append(_rider_delivery_summary(detail))
+                except ValueError:
+                    items.append(
+                        {
+                            "delivery_id": d.id,
+                            "order_id": d.order_id,
+                            "status": str(getattr(d.status, "value", d.status)),
+                        }
+                    )
+            return {"ok": True, "role": role, "deliveries": items}
         else:
             return {"ok": False, "error": "role cannot list orders"}
         return {"ok": True, "role": role, "orders": [order_to_response(o).model_dump() for o in orders]}
@@ -108,6 +144,17 @@ def nearby_delivery_jobs_tool(limit: int = 5) -> dict[str, Any]:
         if not user:
             return {"ok": False, "error": "user not found"}
         jobs = list_available_jobs(db, user, limit=limit)
-        return {"ok": True, "jobs": jobs}
+        result: dict[str, Any] = {"ok": True, "jobs": jobs}
+        if not jobs:
+            hint = _nearby_jobs_hint(db, user)
+            if hint:
+                result["hint"] = hint
+                result["message"] = {
+                    "offline": "Go Online on the Jobs tab to see nearby delivery jobs.",
+                    "no_gps": "Share your location on the Jobs tab so nearby jobs can be matched.",
+                    "has_active_job": "Finish your current delivery before accepting another job.",
+                    "none_nearby": "No delivery jobs nearby right now — stay online and check again soon.",
+                }.get(hint, "No jobs available.")
+        return result
     finally:
         db.close()

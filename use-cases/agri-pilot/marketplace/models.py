@@ -46,6 +46,14 @@ class ListingStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class ListingCategory(str, enum.Enum):
+    vegetable = "vegetable"
+    fruit = "fruit"
+    grain = "grain"
+    spice = "spice"
+    other = "other"
+
+
 class ConnectionStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
@@ -184,6 +192,7 @@ class Listing(Base):
         CheckConstraint("price_per_kg IS NULL OR price_per_kg >= 0", name="ck_listing_price_non_negative"),
         CheckConstraint("reserved_quantity_kg >= 0", name="ck_listing_reserved_non_negative"),
         Index("ix_listings_status_crop", "status", "crop"),
+        Index("ix_listings_status_category", "status", "category"),
         Index("ix_listings_farmer_id", "farmer_id"),
     )
 
@@ -194,6 +203,14 @@ class Listing(Base):
     reserved_quantity_kg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     price_per_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     harvest_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    image_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    category: Mapped[str] = mapped_column(
+        Enum(ListingCategory, name="listing_category", native_enum=False),
+        nullable=False,
+        default=ListingCategory.vegetable.value,
+    )
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(
         Enum(ListingStatus, name="listing_status", native_enum=False),
         nullable=False,

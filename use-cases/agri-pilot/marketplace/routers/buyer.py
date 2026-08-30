@@ -6,10 +6,13 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from marketplace.auth import get_current_user, require_role
+from marketplace.auth import get_current_user
 from marketplace.database import get_db
+from marketplace.listing_media import resolve_photo_path
+from marketplace.listing_serializers import listing_to_response, listings_to_responses
 from marketplace.models import Listing
 from marketplace.schemas import (
     ConnectionCreate,
@@ -27,6 +30,7 @@ from marketplace.service import (
     create_connection_request,
     get_active_listing,
     get_connection_contact,
+    increment_listing_view,
     list_buyer_connections,
     match_listings,
 )
@@ -37,7 +41,6 @@ router = APIRouter(prefix="/api/buyer", tags=["buyer"])
 
 
 def _buyer_user(user=Depends(get_current_user)):
-    # Buyer role required; no subscription check for buyers (decision 3/4)
     if user.role != "buyer":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="buyer role required")
     return user
@@ -47,6 +50,7 @@ def _buyer_user(user=Depends(get_current_user)):
 def get_listings(
     crop: Optional[str] = Query(default=None),
     district: Optional[str] = Query(default=None),
+    category: Optional[str] = Query(default=None),
     min_qty: Optional[float] = Query(default=None, gt=0),
     max_price: Optional[float] = Query(default=None, ge=0),
     limit: int = Query(default=20, ge=1, le=50),
@@ -54,12 +58,25 @@ def get_listings(
     db: Session = Depends(get_db),
     buyer=Depends(_buyer_user),
 ):
-    # Use guarded service; ensure filters are combined with AND
     items = browse_listings(
-        db, crop=crop, district=district, min_qty=min_qty, max_price=max_price, limit=limit, offset=offset
+        db,
+        crop=crop,
+        district=district,
+        category=category,
+        min_qty=min_qty,
+        max_price=max_price,
+        limit=limit,
+        offset=offset,
     )
-    total = count_browse_listings(db, crop=crop, district=district, min_qty=min_qty, max_price=max_price)
-    return PaginatedListings(items=items, total=total, limit=limit, offset=offset)
+    total = count_browse_listings(
+        db, crop=crop, district=district, category=category, min_qty=min_qty, max_price=max_price
+    )
+    return PaginatedListings(
+        items=listings_to_responses(db, items, audience="buyer"),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/listings/{listing_id}", response_model=ListingResponse)
@@ -68,10 +85,30 @@ def get_listing_detail(
     db: Session = Depends(get_db),
     buyer=Depends(_buyer_user),
 ):
+    listing = increment_listing_view(db, listing_id)
+    if not listing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
+    return listing_to_response(db, listing, audience="buyer")
+
+
+@router.get("/listings/{listing_id}/photo")
+def get_listing_photo(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    buyer=Depends(_buyer_user),
+):
     listing = get_active_listing(db, listing_id)
     if not listing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
-    return listing
+    if not listing.image_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found")
+    try:
+        path = resolve_photo_path(listing.image_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found") from exc
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found")
+    return FileResponse(path)
 
 
 @router.get("/match", response_model=MatchResponse)
@@ -87,7 +124,16 @@ def get_match(
         results = match_listings(db, crop=crop, district=district, quantity_kg=quantity_kg, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    items = [{"listing": r["listing"], "score": r["score"], "reason": r["reason"]} for r in results]
+    items = [
+        {
+            "listing": listing_to_response(db, r["listing"], audience="buyer"),
+            "score": r["score"],
+            "reason": r["reason"],
+            "district": r.get("district"),
+            "health": r.get("health"),
+        }
+        for r in results
+    ]
     return MatchResponse(items=items, query={"crop": crop, "district": district, "quantity_kg": quantity_kg})
 
 
@@ -110,7 +156,6 @@ def post_connect(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="already requested") from exc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from exc
 
-    # Best-effort notify farmer (never blocks 201)
     try:
         from marketplace.notifications import notify_farmer_of_request
 
@@ -129,7 +174,6 @@ def get_my_connections(
     buyer=Depends(_buyer_user),
 ):
     conns = list_buyer_connections(db, buyer.id)
-    # Build response with listing embedded; no phone leak
     result = []
     for c in conns:
         listing = db.get(Listing, c.listing_id)
@@ -142,7 +186,7 @@ def get_my_connections(
                 message=c.message,
                 created_at=c.created_at,
                 updated_at=c.updated_at,
-                listing=listing,  # type: ignore[arg-type]
+                listing=listing_to_response(db, listing, audience="buyer") if listing else None,  # type: ignore[arg-type]
             )
         )
     return result

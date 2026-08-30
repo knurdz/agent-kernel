@@ -14,7 +14,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from marketplace.models import BuyerProfile, ConnectionRequest, FarmerProfile, Listing, User, UserRole
+from marketplace.models import BuyerProfile, ConnectionRequest, FarmerProfile, Listing, Order, User, UserRole
 
 
 # ---------- helpers ----------
@@ -75,6 +75,8 @@ def create_listing(
     quantity_kg: float,
     price_per_kg: Optional[float] = None,
     harvest_date: Optional[date] = None,
+    category: str = "vegetable",
+    description: Optional[str] = None,
 ) -> Listing:
     farmer = db.get(User, farmer_id)
     if not farmer or farmer.role != UserRole.farmer.value:
@@ -86,6 +88,8 @@ def create_listing(
         raise ValueError("quantity_kg must be > 0")
     if price_per_kg is not None and float(price_per_kg) < 0:
         raise ValueError("price_per_kg must be >= 0")
+    if category not in {"vegetable", "fruit", "grain", "spice", "other"}:
+        raise ValueError("invalid category")
 
     listing = Listing(
         farmer_id=farmer_id,
@@ -93,6 +97,8 @@ def create_listing(
         quantity_kg=float(quantity_kg),
         price_per_kg=float(price_per_kg) if price_per_kg is not None else None,
         harvest_date=harvest_date,
+        category=category,
+        description=description.strip() if description else None,
         status="active",
     )
     db.add(listing)
@@ -144,7 +150,7 @@ def update_listing(db: Session, farmer_id: int, listing_id: int, patch: dict) ->
         if new_status not in allowed:
             raise ValueError(f"invalid status transition {listing.status} -> {new_status}")
 
-    for key in ("crop", "quantity_kg", "price_per_kg", "harvest_date", "status"):
+    for key in ("crop", "quantity_kg", "price_per_kg", "harvest_date", "status", "category", "description"):
         if key in patch and patch[key] is not None:
             val = patch[key]
             if key == "crop":
@@ -155,12 +161,20 @@ def update_listing(db: Session, farmer_id: int, listing_id: int, patch: dict) ->
                 if float(val) <= 0:
                     raise ValueError("quantity_kg must be > 0")
                 val = float(val)
+                reserved = float(listing.reserved_quantity_kg or 0)
+                if val < reserved - 0.001:
+                    raise ValueError(f"quantity_kg cannot be less than reserved stock ({reserved}kg)")
             elif key == "price_per_kg":
                 if val is not None and float(val) < 0:
                     raise ValueError("price_per_kg must be >= 0")
                 val = float(val) if val is not None else None
+            elif key == "category":
+                if val not in {"vegetable", "fruit", "grain", "spice", "other"}:
+                    raise ValueError("invalid category")
+            elif key == "description":
+                val = str(val).strip() if val else None
             setattr(listing, key, val)
-        elif key in patch and patch[key] is None and key in ("price_per_kg", "harvest_date"):
+        elif key in patch and patch[key] is None and key in ("price_per_kg", "harvest_date", "description"):
             setattr(listing, key, None)
 
     listing.updated_at = datetime.now(timezone.utc)
@@ -173,9 +187,90 @@ def delete_listing(db: Session, farmer_id: int, listing_id: int) -> bool:
     listing = db.get(Listing, listing_id)
     if not listing or listing.farmer_id != farmer_id:
         return False
+    from marketplace.listing_media import delete_listing_photo
+
+    delete_listing_photo(listing.image_path)
     db.delete(listing)
     db.commit()
     return True
+
+
+def save_listing_image(db: Session, farmer_id: int, listing_id: int, relative_path: str) -> Optional[Listing]:
+    listing = db.get(Listing, listing_id)
+    if not listing or listing.farmer_id != farmer_id:
+        return None
+    from marketplace.listing_media import delete_listing_photo
+
+    delete_listing_photo(listing.image_path)
+    listing.image_path = relative_path
+    listing.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+def increment_listing_view(db: Session, listing_id: int) -> Optional[Listing]:
+    listing = db.get(Listing, listing_id)
+    if not listing or listing.status != "active":
+        return None
+    listing.view_count = int(listing.view_count or 0) + 1
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+def get_listing_analytics(db: Session, farmer_id: int, listing_id: int) -> Optional[dict]:
+    listing = db.get(Listing, listing_id)
+    if not listing or listing.farmer_id != farmer_id:
+        return None
+
+    connections = list(
+        db.scalars(select(ConnectionRequest).where(ConnectionRequest.listing_id == listing_id)).all()
+    )
+    conn_counts = {"pending": 0, "accepted": 0, "declined": 0, "completed": 0}
+    for conn in connections:
+        if conn.status in conn_counts:
+            conn_counts[conn.status] += 1
+
+    orders = list(db.scalars(select(Order).where(Order.listing_id == listing_id)).all())
+    active_statuses = {
+        "confirmed",
+        "ready",
+        "searching_rider",
+        "rider_assigned",
+        "en_route_pickup",
+        "arrived_pickup",
+        "picked_up",
+        "in_transit",
+        "delivered",
+    }
+    kg_sold = 0.0
+    estimated_revenue = 0.0
+    for order in orders:
+        if order.status in active_statuses or order.status == "delivered":
+            qty = float(order.quantity_kg)
+            kg_sold += qty
+            if order.price_per_kg is not None:
+                estimated_revenue += qty * float(order.price_per_kg)
+
+    reserved = float(listing.reserved_quantity_kg or 0)
+    available = max(0.0, float(listing.quantity_kg) - reserved)
+
+    return {
+        "listing_id": listing.id,
+        "view_count": int(listing.view_count or 0),
+        "connections_pending": conn_counts["pending"],
+        "connections_accepted": conn_counts["accepted"],
+        "connections_declined": conn_counts["declined"],
+        "connections_completed": conn_counts["completed"],
+        "order_count": len(orders),
+        "kg_sold": kg_sold,
+        "kg_reserved": reserved,
+        "quantity_kg": float(listing.quantity_kg),
+        "reserved_quantity_kg": reserved,
+        "available_kg": available,
+        "estimated_revenue": estimated_revenue,
+    }
 
 
 # ---------- buyer browse / discovery (Phase 16.1) ----------
@@ -192,6 +287,7 @@ def _browse_base_query(
     *,
     crop: Optional[str] = None,
     district: Optional[str] = None,
+    category: Optional[str] = None,
     min_qty: Optional[float] = None,
     max_price: Optional[float] = None,
 ):
@@ -200,7 +296,11 @@ def _browse_base_query(
     if crop is not None:
         c = crop.strip().lower()
         if c:
-            q = q.where(Listing.crop == c)
+            q = q.where(Listing.crop.ilike(f"%{c}%"))
+    if category is not None:
+        cat = category.strip().lower()
+        if cat:
+            q = q.where(Listing.category == cat)
     if district is not None:
         d = district.strip()
         if d:
@@ -221,6 +321,7 @@ def browse_listings(
     *,
     crop: Optional[str] = None,
     district: Optional[str] = None,
+    category: Optional[str] = None,
     min_qty: Optional[float] = None,
     max_price: Optional[float] = None,
     limit: int = 20,
@@ -228,7 +329,9 @@ def browse_listings(
 ) -> list[Listing]:
     limit = _clamp_limit(limit)
     offset = max(0, int(offset))
-    q = _browse_base_query(db, crop=crop, district=district, min_qty=min_qty, max_price=max_price)
+    q = _browse_base_query(
+        db, crop=crop, district=district, category=category, min_qty=min_qty, max_price=max_price
+    )
     q = q.order_by(Listing.created_at.desc()).limit(limit).offset(offset)
     return list(db.scalars(q).all())
 
@@ -238,10 +341,13 @@ def count_browse_listings(
     *,
     crop: Optional[str] = None,
     district: Optional[str] = None,
+    category: Optional[str] = None,
     min_qty: Optional[float] = None,
     max_price: Optional[float] = None,
 ) -> int:
-    q = _browse_base_query(db, crop=crop, district=district, min_qty=min_qty, max_price=max_price)
+    q = _browse_base_query(
+        db, crop=crop, district=district, category=category, min_qty=min_qty, max_price=max_price
+    )
     # Convert to count query: select count(*) from (base)
     # Use subquery approach via func.count on Listing.id
     # We need to redo without order/limit
@@ -282,15 +388,15 @@ def _load_districts() -> dict[str, str]:
 
 
 def _district_score(listing_district: Optional[str], query_district: Optional[str]) -> tuple[int, str]:
-    """Return (score, reason) for ranking."""
+    """Return (district component 0-200, reason) for ranking."""
     if not query_district or not query_district.strip():
-        return 0, "other district"
+        return 0, "any district"
     if not listing_district or not listing_district.strip():
         return 0, "other district"
     q = query_district.strip().lower()
     ld = listing_district.strip().lower()
     if ld == q:
-        return 2, "exact district"
+        return 200, "exact district"
     # Same region via districts.json
     mapping = _load_districts()
     # Find region for listing and query (case-sensitive keys as stored)
@@ -303,8 +409,100 @@ def _district_score(listing_district: Optional[str], query_district: Optional[st
         if k.lower() == ld:
             l_region = v
     if q_region and l_region and q_region == l_region:
-        return 1, f"same region ({q_region})"
+        return 100, f"same region ({q_region})"
     return 0, "other district"
+
+
+def _farmer_district(db: Session, farmer_id: int) -> Optional[str]:
+    fp = db.get(FarmerProfile, farmer_id)
+    return fp.district if fp else None
+
+
+def _health_match_component(db: Session, listing: Listing) -> tuple[int, dict]:
+    """Return (health bonus points, public health summary)."""
+    from marketplace.plant_service import get_listing_insights
+
+    if listing.plant_id is None:
+        return 0, {"tracked": False, "trend": None, "latest_label": None}
+
+    insights = get_listing_insights(db, listing.id)
+    if not insights:
+        return 10, {"tracked": True, "trend": "unknown", "latest_label": None}
+
+    trend = insights.get("trend", "unknown")
+    latest_label = insights.get("latest_label")
+    bonus = 0
+    if trend == "improving":
+        bonus = 40
+    elif trend == "stable":
+        bonus = 30
+    elif trend == "unknown":
+        bonus = 15
+    elif trend == "worsening":
+        bonus = -10
+    if latest_label and "healthy" in str(latest_label).lower():
+        bonus += 20
+    return bonus, {"tracked": True, "trend": trend, "latest_label": latest_label}
+
+
+def _price_match_component(listing: Listing, prices: list[float]) -> int:
+    if listing.price_per_kg is None or not prices:
+        return 0
+    lo, hi = min(prices), max(prices)
+    if hi <= lo:
+        return 15
+    # Lower price ranks higher (max 30 points).
+    return int(30 * (hi - float(listing.price_per_kg)) / (hi - lo))
+
+
+def _harvest_match_component(listing: Listing) -> int:
+    if listing.harvest_date is None:
+        return 0
+    from datetime import date
+
+    today = date.today()
+    days = (today - listing.harvest_date).days
+    if days < 0:
+        return 5
+    if days <= 14:
+        return 20
+    if days <= 30:
+        return 10
+    return 0
+
+
+def _quantity_match_component(listing: Listing, quantity_kg: Optional[float]) -> int:
+    if quantity_kg is None or quantity_kg <= 0:
+        return 0
+    if listing.quantity_kg < quantity_kg:
+        return 0
+    # Prefer listings close to requested quantity (not huge surplus).
+    ratio = float(quantity_kg) / float(listing.quantity_kg)
+    return int(20 * ratio)
+
+
+def _build_match_reason(
+    district_reason: str,
+    health: dict,
+    *,
+    has_price_rank: bool,
+    price_bonus: int,
+) -> str:
+    parts: list[str] = []
+    if district_reason and district_reason != "any district":
+        parts.append(district_reason)
+    if health.get("tracked"):
+        trend = health.get("trend") or "unknown"
+        label = health.get("latest_label")
+        if label:
+            parts.append(f"tracked crop ({trend}, {str(label).replace('_', ' ')})")
+        else:
+            parts.append(f"tracked crop ({trend})")
+    if has_price_rank and price_bonus > 0:
+        parts.append("competitive price")
+    if not parts:
+        return "available listing"
+    return "; ".join(parts)
 
 
 def match_listings(
@@ -323,25 +521,39 @@ def match_listings(
     q = select(Listing).where(Listing.status == "active").where(Listing.crop == crop_norm)
     if quantity_kg is not None:
         q = q.where(Listing.quantity_kg >= float(quantity_kg))
-    # No order yet; ranking done in python after scoring
     candidates = list(db.scalars(q).all())
 
-    # Need farmer district for each listing
-    scored: list[tuple[int, datetime, Listing, str]] = []
+    prices = [float(lst.price_per_kg) for lst in candidates if lst.price_per_kg is not None]
+    scored: list[tuple[int, datetime, Listing, str, Optional[str], dict]] = []
     for lst in candidates:
-        # Use relationship or direct query for district
-        fp = db.get(FarmerProfile, lst.farmer_id)
-        listing_district = fp.district if fp else None
-        score, reason = _district_score(listing_district, district)
-        # store tuple for sorting: (-score, -created_at)
-        scored.append((score, lst.created_at, lst, reason))
+        listing_district = _farmer_district(db, lst.farmer_id)
+        district_pts, district_reason = _district_score(listing_district, district)
+        health_pts, health = _health_match_component(db, lst)
+        price_pts = _price_match_component(lst, prices)
+        harvest_pts = _harvest_match_component(lst)
+        qty_pts = _quantity_match_component(lst, quantity_kg)
+        total = district_pts + health_pts + price_pts + harvest_pts + qty_pts
+        reason = _build_match_reason(
+            district_reason,
+            health,
+            has_price_rank=bool(prices),
+            price_bonus=price_pts,
+        )
+        scored.append((total, lst.created_at, lst, reason, listing_district, health))
 
-    # Sort: exact (2) first, region (1) second, then most recent
     scored.sort(key=lambda x: (-x[0], -x[1].timestamp()))
 
     result: list[dict] = []
-    for score, _, lst, reason in scored[:limit]:
-        result.append({"listing": lst, "score": score, "reason": reason})
+    for score, _, lst, reason, listing_district, health in scored[:limit]:
+        result.append(
+            {
+                "listing": lst,
+                "score": score,
+                "reason": reason,
+                "district": listing_district,
+                "health": health,
+            }
+        )
     return result
 
 

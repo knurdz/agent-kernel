@@ -17,6 +17,47 @@ from agentkernel.core.tool import ToolContext
 from tools.tool_guard import guarded
 
 
+def _listing_dict(lst, *, district: Optional[str] = None) -> dict[str, Any]:
+    return {
+        "id": lst.id,
+        "crop": lst.crop,
+        "quantity_kg": lst.quantity_kg,
+        "price_per_kg": lst.price_per_kg,
+        "harvest_date": str(lst.harvest_date) if lst.harvest_date else None,
+        "status": str(getattr(lst.status, "value", lst.status)),
+        "district": district,
+        "plant_id": lst.plant_id,
+        "created_at": lst.created_at.isoformat(),
+        "farmer_id": lst.farmer_id,
+    }
+
+
+def _match_item_dict(r: dict) -> dict[str, Any]:
+    from marketplace.service import _farmer_district
+
+    lst = r["listing"]
+    district = r.get("district")
+    if district is None:
+        # Defensive: tools may call match_listings without district cached.
+        try:
+            from marketplace.database import SessionLocal
+
+            db = SessionLocal()
+            try:
+                district = _farmer_district(db, lst.farmer_id)
+            finally:
+                db.close()
+        except Exception:
+            district = None
+    return {
+        "listing": _listing_dict(lst, district=district),
+        "score": r["score"],
+        "reason": r["reason"],
+        "district": district,
+        "health": r.get("health"),
+    }
+
+
 def _get_session_identity() -> tuple[Optional[int], Optional[str], Optional[str]]:
     """Return (user_id, role, subscription_status) from session KV."""
     try:
@@ -382,19 +423,11 @@ def browse_listings_tool(
                 db, crop=crop, district=district, min_qty=min_qty, max_price=max_price, limit=lim, offset=0
             )
             total = count_browse_listings(db, crop=crop, district=district, min_qty=min_qty, max_price=max_price)
+            from marketplace.service import _farmer_district
+
             return {
                 "items": [
-                    {
-                        "id": r.id,
-                        "crop": r.crop,
-                        "quantity_kg": r.quantity_kg,
-                        "price_per_kg": r.price_per_kg,
-                        "harvest_date": str(r.harvest_date) if r.harvest_date else None,
-                        "status": str(getattr(r.status, "value", r.status)),
-                        "district": None,
-                        "created_at": r.created_at.isoformat(),
-                        "farmer_id": r.farmer_id,
-                    }
+                    _listing_dict(r, district=_farmer_district(db, r.farmer_id))
                     for r in items
                 ],
                 "count": len(items),
@@ -444,23 +477,7 @@ def match_listings_tool(
         try:
             results = match_listings(db, crop=crop, district=district, quantity_kg=quantity_kg, limit=lim)
             return {
-                "items": [
-                    {
-                        "listing": {
-                            "id": r["listing"].id,
-                            "crop": r["listing"].crop,
-                            "quantity_kg": r["listing"].quantity_kg,
-                            "price_per_kg": r["listing"].price_per_kg,
-                            "harvest_date": str(r["listing"].harvest_date) if r["listing"].harvest_date else None,
-                            "status": str(getattr(r["listing"].status, "value", r["listing"].status)),
-                            "created_at": r["listing"].created_at.isoformat(),
-                            "farmer_id": r["listing"].farmer_id,
-                        },
-                        "score": r["score"],
-                        "reason": r["reason"],
-                    }
-                    for r in results
-                ],
+                "items": [_match_item_dict(r) for r in results],
                 "query": {"crop": crop, "district": district, "quantity_kg": quantity_kg},
             }
         finally:
@@ -523,5 +540,101 @@ def connect_to_listing_tool(listing_id: int, message: Optional[str] = None) -> d
         if "already requested" in msg:
             return {"error": "duplicate", "message": "already requested"}
         return {"error": "validation", "message": msg}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": "internal", "message": str(exc)}
+
+
+@guarded
+def listing_insights_tool(listing_id: int) -> dict[str, Any]:
+    """Read-only crop health summary for a listing (same as GET /api/buyer/listings/{id}/insights). No photos or phone numbers."""
+    uid, role, _ = _get_session_identity()
+    if uid is None:
+        return {"error": "not authenticated", "message": "Please log in to view listing insights."}
+    if role not in {"buyer", "farmer"}:
+        return {"error": "role", "message": "Login as buyer or farmer to view listing insights."}
+    try:
+        lid = int(listing_id)
+    except Exception:
+        return {"error": "validation", "message": "listing_id must be an integer"}
+
+    try:
+        from marketplace.database import SessionLocal
+        from marketplace.plant_service import get_listing_insights
+
+        db = SessionLocal()
+        try:
+            insights = get_listing_insights(db, lid)
+            if not insights:
+                return {
+                    "ok": True,
+                    "listing_id": lid,
+                    "available": False,
+                    "message": "No crop history shared for this listing yet.",
+                }
+            return {
+                "ok": True,
+                "listing_id": lid,
+                "available": True,
+                "insights": {
+                    "crop": insights.get("crop"),
+                    "observation_count": insights.get("observation_count"),
+                    "first_observation_date": insights.get("first_observation_date"),
+                    "last_observation_date": insights.get("last_observation_date"),
+                    "latest_label": insights.get("latest_label"),
+                    "latest_confidence": insights.get("latest_confidence"),
+                    "timeline": insights.get("timeline", []),
+                    "health_series": insights.get("health_series", []),
+                    "trend": insights.get("trend"),
+                    "crop_care": insights.get("crop_care"),
+                    "growth_progress": insights.get("growth_progress"),
+                },
+            }
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": "internal", "message": str(exc)}
+
+
+@guarded
+def my_connections_tool(limit: int = 20) -> dict[str, Any]:
+    """List the user's marketplace connections (buyer or farmer). No phone numbers."""
+    uid, role, _sub = _get_session_identity()
+    if uid is None:
+        return {"error": "not authenticated", "message": "Please log in to view connections."}
+    if role not in {"buyer", "farmer"}:
+        return {"error": "role", "message": "Only buyers and farmers have marketplace connections."}
+    try:
+        lim = max(1, min(50, int(limit)))
+    except Exception:
+        lim = 20
+
+    try:
+        from marketplace.database import SessionLocal
+        from marketplace.models import Listing
+        from marketplace.service import list_buyer_connections, list_farmer_connections
+
+        db = SessionLocal()
+        try:
+            if role == "buyer":
+                conns = list_buyer_connections(db, uid)[:lim]
+            else:
+                conns = list_farmer_connections(db, uid)[:lim]
+            items = []
+            for c in conns:
+                listing = db.get(Listing, c.listing_id)
+                items.append(
+                    {
+                        "connection_id": c.id,
+                        "listing_id": c.listing_id,
+                        "status": str(getattr(c.status, "value", c.status)),
+                        "message": c.message,
+                        "crop": listing.crop if listing else None,
+                        "quantity_kg": listing.quantity_kg if listing else None,
+                        "created_at": c.created_at.isoformat(),
+                    }
+                )
+            return {"ok": True, "role": role, "connections": items}
+        finally:
+            db.close()
     except Exception as exc:  # noqa: BLE001
         return {"error": "internal", "message": str(exc)}

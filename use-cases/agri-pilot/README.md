@@ -16,6 +16,8 @@ Durable memory: sessions and multimodal attachments are Redis-backed under Docke
 
 **Plant tracking & crop scans:** farmers can run a **one-time crop scan** (`POST /api/farmer/scans`) or maintain a **plant list** with a photo timeline (`/api/farmer/plants*`). Image analysis reuses the existing HuggingFace ViT pipeline in `tools/vision_tool.py` (`check_image_quality` + `diagnose_crop_image` via `analyze_crop_photo`) — no separate vision API. Observation photos persist on disk under `data/plant_media/` (Docker volume `plant-media`; override with `AGRIPILOT_PLANT_MEDIA_ROOT`). A sell listing can be linked 1:1 to a tracked plant (`POST /api/farmer/listings/{id}/import-plant`); buyers then see **crop-health insights** on that listing (`GET /api/buyer/listings/{id}/insights`) — observation counts, diagnosis timeline, and trend — without raw photos or chemical advice. Chat diagnosis (supervisor → vision → knowledge) remains unchanged for conversational advice.
 
+**Listing shop:** farmers can attach a **product photo** when creating or editing a listing (`POST /api/farmer/listings/{id}/photo`); images persist under `data/listing_media/` (Docker volume `listing-media`; override with `AGRIPILOT_LISTING_MEDIA_ROOT`). Listings support **category** (`vegetable|fruit|grain|spice|other`), optional **description**, and **harvest date**. Farmers manage stock, status, and view **analytics** (`GET /api/farmer/listings/{id}/analytics` — views, connection requests, orders, kg sold, revenue estimate). Buyers auto-browse all active listings (empty filters return the full feed); crop search uses case-insensitive substring match; optional `category` filter. Opening a listing detail increments `view_count`.
+
 **Rider delivery MVP:** a third **rider** account (self-registered with vehicle confirmation) can accept nearby delivery jobs after farmers mark orders ready. Buyers choose **pickup** or **delivery** on accepted connections; farmers confirm quantity and pickup pin; delivery orders enter rider search by weight + distance (no vehicle-type tiers). State changes are **deterministic REST** (`marketplace/order_service.py`, `marketplace/dispatch_service.py`); the agent only explains status via read-only `delivery_tools`. Maps use **OpenStreetMap** tiles in the mobile app (`flutter_map`, no API key) and optional **OSRM** road routing on the server (`marketplace/maps_service.py`, falls back to Haversine). Live tracking uses rider GPS posts + buyer/farmer polling; FCM notifies milestones. Payment stays cash/off-platform.
 
 ## Prerequisites
@@ -90,6 +92,7 @@ Key `.env.local.example:78` knobs:
 | `AK_TELEGRAM__BOT_TOKEN` / `AK_TELEGRAM__WEBHOOK_SECRET` | Telegram Bot API — token from @BotFather; secret echoed back as `X-Telegram-Bot-Api-Secret-Token` (see `API / Telegram`) |
 | `AGRIPILOT_TOOL_MAX_CALLS` / `AGRIPILOT_TOOL_TIMEOUT_SECONDS` | `tools/tool_guard.py:44` limits |
 | `AGRIPILOT_PLANT_MEDIA_ROOT` | default `data/plant_media/` — on-disk plant observation photos (Docker volume `plant-media`) |
+| `AGRIPILOT_LISTING_MEDIA_ROOT` | default `data/listing_media/` — on-disk listing product photos (Docker volume `listing-media`) |
 
 ## Marketplace — Roles & Auth
 
@@ -150,15 +153,20 @@ curl -s -X DELETE $BASE/api/farmer/listings/1 -H "Authorization: Bearer $F_TOKEN
 | `POST` | `/api/auth/signup` | public | `SignupRequest{role,phone_number,password≥8,name,district?,contact_phone_number? (farmer E.164)}` → `201 {id,phone_number,role,subscription_status}`; `409` duplicate; buyer `none`, farmer `active` |
 | `POST` | `/api/auth/login` | public | `LoginRequest{phone_number,password}` → `200 {access_token}`; `401` |
 | `GET` | `/api/auth/me` | `Bearer JWT` | `MeResponse{id,phone_number,role,subscription_status,profile:{district,contact_phone}}` |
-| `POST` | `/api/farmer/listings` | `farmer+active` | `ListingCreate{crop,quantity_kg>0,price_per_kg≥0?,harvest_date?}` → `201 ListingResponse` (crop lowercased) |
+| `POST` | `/api/farmer/listings` | `farmer+active` | `ListingCreate{crop,quantity_kg>0,price_per_kg≥0?,harvest_date?,category?,description?}` → `201 ListingResponse` (crop lowercased) |
 | `GET` | `/api/farmer/listings?status&limit&offset` | `farmer+active` | own `PaginatedListings{items,total,limit,offset}` `created_at DESC` |
-| `PATCH` | `/api/farmer/listings/{id}` | `farmer+active` owner | `ListingUpdate{crop?,quantity_kg?,price_per_kg?,harvest_date?,status?}` → `200` or `404`/`400`/`422` |
+| `GET` | `/api/farmer/listings/{id}` | `farmer+active` owner | full `ListingResponse` incl. `available_kg`, `reserved_quantity_kg`, `photo_url` |
+| `GET` | `/api/farmer/listings/{id}/analytics` | `farmer+active` owner | views, connection counts, orders, kg sold, revenue estimate |
+| `POST` | `/api/farmer/listings/{id}/photo` | `farmer+active` owner | multipart `image` → `200 ListingResponse` with `photo_url` |
+| `GET` | `/api/farmer/listings/{id}/photo` | `farmer+active` owner | JPEG/PNG product photo |
+| `PATCH` | `/api/farmer/listings/{id}` | `farmer+active` owner | `ListingUpdate{crop?,quantity_kg?,price_per_kg?,harvest_date?,status?,category?,description?}` → `200` or `404`/`400`/`422` |
 | `DELETE` | `/api/farmer/listings/{id}` | `farmer+active` owner | `204` or `404` |
 | `GET` | `/api/farmer/connections` | `farmer+active` | inbox `[ConnectionWithListingAndBuyer]` (buyer `name,district,business_name`, no `phone_number`) |
 | `PATCH` | `/api/farmer/connections/{id}` | `farmer+active` owner | `{"status":"accepted"\|"declined"\|"completed"}` `200 ConnectionResponse` `422`/`400` terminal/`404` |
 | `GET` | `/api/farmer/connections/{id}/contact` | `farmer+active` owner | `200 ContactResponse{phone_number (buyer primary),listing_id,connection_id,status}` only `accepted`/`completed` else `400` |
-| `GET` | `/api/buyer/listings?crop&district&min_qty&max_price&limit&offset` | `buyer` | active `PaginatedListings` (filters `AND`, `crop` lower, `district` join `farmer_profiles.district` case-insensitive, `price_per_kg` not null, `limit[1,50]`); no phone |
-| `GET` | `/api/buyer/listings/{id}` | `buyer` | active `ListingResponse` or `404` |
+| `GET` | `/api/buyer/listings?crop&district&category&min_qty&max_price&limit&offset` | `buyer` | active `PaginatedListings` (empty filters = all active; `crop` ILIKE substring; `category` exact; `district` join `farmer_profiles.district` case-insensitive); includes `farmer_name`, `district`, `available_kg`, `photo_url`; no phone |
+| `GET` | `/api/buyer/listings/{id}` | `buyer` | active `ListingResponse` (increments `view_count`) or `404` |
+| `GET` | `/api/buyer/listings/{id}/photo` | `buyer` | product photo for active listing |
 | `GET` | `/api/buyer/match?crop=&quantity_kg=&district=` | `buyer` | ranked `MatchResponse{items:[{listing,score,reason}],query}` (`exact 2`, `same region 1` via `data/districts.json:1` else `0`, `-created_at`, `quantity_kg>=requested` filter then score); `crop` required `422` |
 | `POST` | `/api/buyer/listings/{id}/connect` | `buyer` | `ConnectionCreate{message?≤500}` → `201 ConnectionResponse pending` `409` duplicate pending, `404` inactive, best-effort `marketplace/notifications.py:7` WhatsApp to farmer |
 | `GET` | `/api/buyer/connections` | `buyer` | own `[ConnectionWithListing]` (no phone) |
@@ -204,6 +212,18 @@ AK_MARKETPLACE__DEV_USER_ID=1 python demo.py
 
 # REST chat (agent)
 curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' -d '{"prompt":"Show me tomato near Kandy","session_id":"buyer-1","agent":"triage"}'
+
+Buyer chat examples (mobile JWT session `agri:user:{buyer_id}`):
+- "Find the best 200kg of tomatoes near Kandy" → `match_listings_tool` (health + district ranking)
+- "Is listing 12 healthy?" → `listing_insights_tool` (open Crop analytics on Home for the chart)
+- "Where is my rider?" → `my_orders_tool` / `order_status_tool` (read-only; place orders in Inbox)
+- "Pickup or delivery?" → explains modes; accepted connections → Place order in the app
+
+Rider chat examples (mobile JWT session `agri:user:{rider_id}`):
+- "What jobs are nearby?" → `nearby_delivery_jobs_tool` (hint if offline/no GPS/active job)
+- "What's my active delivery?" → `rider_active_job_tool`
+- "How do I go online?" → explain Jobs tab Online toggle + GPS; accept jobs in app only
+- Buyer PIN at drop-off → enter on Deliveries tab, not in chat
 ```
 
 ### Conversation continuity across restarts

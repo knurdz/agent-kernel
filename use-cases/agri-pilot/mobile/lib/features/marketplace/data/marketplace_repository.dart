@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,12 +16,69 @@ class MarketplaceRepository {
     return items.map((e) => Listing.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<Listing> createListing({required String crop, required double qty, double? price}) async {
+  Future<Listing> listingDetail(int id, {bool farmer = true}) async {
+    final prefix = farmer ? '/api/farmer' : '/api/buyer';
+    final resp = await _dio.get('$prefix/listings/$id');
+    return Listing.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<ListingAnalytics> listingAnalytics(int id) async {
+    final resp = await _dio.get('/api/farmer/listings/$id/analytics');
+    return ListingAnalytics.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<Listing> createListing({
+    required String crop,
+    required double qty,
+    double? price,
+    String category = 'vegetable',
+    String? description,
+    String? harvestDate,
+  }) async {
     final resp = await _dio.post('/api/farmer/listings', data: {
       'crop': crop,
       'quantity_kg': qty,
       if (price != null) 'price_per_kg': price,
+      'category': category,
+      if (description != null && description.isNotEmpty) 'description': description,
+      if (harvestDate != null && harvestDate.isNotEmpty) 'harvest_date': harvestDate,
     });
+    return Listing.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<Listing> updateListing(
+    int id, {
+    String? crop,
+    double? qty,
+    double? price,
+    String? category,
+    String? description,
+    String? harvestDate,
+    String? status,
+    bool clearPrice = false,
+    bool clearHarvestDate = false,
+    bool clearDescription = false,
+  }) async {
+    final data = <String, dynamic>{};
+    if (crop != null) data['crop'] = crop;
+    if (qty != null) data['quantity_kg'] = qty;
+    if (price != null) data['price_per_kg'] = price;
+    if (clearPrice) data['price_per_kg'] = null;
+    if (category != null) data['category'] = category;
+    if (description != null) data['description'] = description;
+    if (clearDescription) data['description'] = null;
+    if (harvestDate != null) data['harvest_date'] = harvestDate;
+    if (clearHarvestDate) data['harvest_date'] = null;
+    if (status != null) data['status'] = status;
+    final resp = await _dio.patch('/api/farmer/listings/$id', data: data);
+    return Listing.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<Listing> uploadListingPhoto(int id, File image) async {
+    final form = FormData.fromMap({
+      'image': await MultipartFile.fromFile(image.path, filename: 'listing.jpg'),
+    });
+    final resp = await _dio.post('/api/farmer/listings/$id/photo', data: form);
     return Listing.fromJson(resp.data as Map<String, dynamic>);
   }
 
@@ -41,23 +100,24 @@ class MarketplaceRepository {
     return resp.data['phone_number'] as String;
   }
 
-  Future<List<Listing>> browse({String? crop, String? district}) async {
+  Future<List<Listing>> browse({String? crop, String? district, String? category}) async {
     final resp = await _dio.get('/api/buyer/listings', queryParameters: {
       if (crop != null && crop.isNotEmpty) 'crop': crop,
       if (district != null && district.isNotEmpty) 'district': district,
-      'limit': 20,
+      if (category != null && category.isNotEmpty) 'category': category,
+      'limit': 50,
     });
     return (resp.data['items'] as List<dynamic>).map((e) => Listing.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<List<Listing>> match({required String crop, String? district, double? qty}) async {
+  Future<List<MatchResult>> match({required String crop, String? district, double? qty}) async {
     final resp = await _dio.get('/api/buyer/match', queryParameters: {
       'crop': crop,
       if (district != null) 'district': district,
       if (qty != null) 'quantity_kg': qty,
     });
     return (resp.data['items'] as List<dynamic>)
-        .map((e) => Listing.fromJson((e['listing'] as Map<String, dynamic>)))
+        .map((e) => MatchResult.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
