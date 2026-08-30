@@ -109,10 +109,12 @@ def test_login_and_me():
     # wrong password
     r2 = client.post("/api/auth/login", json={"phone_number": "+94770001006", "password": "wrongpass"})
     assert r2.status_code == 401
+    assert r2.json()["detail"] == "invalid credentials"
 
     # unknown phone
     r3 = client.post("/api/auth/login", json={"phone_number": "+94770001999", "password": "secret123"})
     assert r3.status_code == 401
+    assert r3.json()["detail"] == "invalid credentials"
 
     # me
     r4 = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
@@ -147,3 +149,48 @@ def test_hash_verify_roundtrip():
     h = hash_password("secret123")
     assert verify_password("secret123", h)
     assert not verify_password("wrong", h)
+
+
+def test_signup_local_sl_phone_formats():
+    client, _, _ = _client_with_memory()
+    r = client.post(
+        "/api/auth/signup",
+        json={
+            "role": "farmer",
+            "phone_number": "0770001008",
+            "password": "secret123",
+            "name": "Local",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["phone_number"] == "+94770001008"
+
+
+def test_login_sl_phone_without_plus():
+    client, _, _ = _client_with_memory()
+    client.post(
+        "/api/auth/signup",
+        json={
+            "role": "farmer",
+            "phone_number": "+94770001009",
+            "password": "secret123",
+            "name": "LoginFmt",
+        },
+    )
+    r = client.post(
+        "/api/auth/login",
+        json={"phone_number": "94770001009", "password": "secret123"},
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_normalize_phone_unit():
+    from marketplace.auth import normalize_phone
+
+    assert normalize_phone("0741174199") == "+94741174199"
+    assert normalize_phone("741174199") == "+94741174199"
+    assert normalize_phone("94741175199") == "+94741175199"
+    assert normalize_phone("+94 741-174 199") == "+94741174199"
+
+    with pytest.raises(ValueError):
+        normalize_phone("74115199")

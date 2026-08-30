@@ -144,6 +144,14 @@ match the `openai-guardrails` `PipelineBundles` schema:
   runs against real Postgres when reachable, skips otherwise. Legacy
   `data/app.db` is read only by `scripts/migrate_sqlite_to_postgres.py`
   (manual, refuses non-empty target unless `--force`).
+- **Plant tracking** — `marketplace/models.py` (`Plant`, `PlantObservation`),
+  `marketplace/plant_service.py`, `marketplace/plant_media.py` (on-disk photos under
+  `data/plant_media/`, env `AGRIPILOT_PLANT_MEDIA_ROOT`), `marketplace/routers/plants.py`
+  (`/api/farmer/scans`, `/api/farmer/plants*`, import-from-listing). REST scans reuse
+  `tools/vision_tool.py:analyze_crop_photo` (quality gate + HuggingFace ViT; optional
+  short RAG snippet, no chemical/dosage on observations). Buyers see aggregated insights
+  via `GET /api/buyer/listings/{id}/insights` when a listing is linked 1:1 to a plant.
+  Mobile screens under `mobile/lib/features/plants/`.
 
 ## Style
 

@@ -43,50 +43,146 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Channels'), leading: BackButton(onPressed: () => context.pop())),
+      appBar: AppBar(
+        title: const Text('Channels'),
+        leading: BackButton(onPressed: () => context.pop()),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                ListTile(
-                  title: const Text('WhatsApp'),
-                  subtitle: Text(_status?.whatsappEligible == true
-                      ? 'Message from your registered phone to reach the bot'
-                      : 'Active farmer subscription required'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.open_in_new),
-                    onPressed: () => _openUrl(_config?.whatsappWaMe),
+                Text(
+                  'Connect AgriPilot on messaging apps',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                ListTile(
-                  title: const Text('Telegram'),
-                  subtitle: Text(_status?.telegramLinked == true ? 'Linked' : 'Not linked'),
-                  trailing: _status?.telegramLinked == true
-                      ? IconButton(
-                          icon: const Icon(Icons.link_off),
-                          onPressed: () async {
-                            await ref.read(authRepositoryProvider).unlinkTelegram();
-                            await _load();
-                          },
-                        )
-                      : FilledButton(
-                          onPressed: () async {
-                            final url = await ref.read(authRepositoryProvider).telegramLinkUrl();
-                            await _openUrl(url);
-                          },
-                          child: const Text('Link'),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF25D366).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.chat, color: Color(0xFF25D366)),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'WhatsApp',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _status?.whatsappEligible == true
+                                        ? 'Message from your registered phone'
+                                        : 'Active farmer subscription required',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.open_in_new),
+                              onPressed: _status?.whatsappEligible == true
+                                  ? () => _openUrl(_config?.whatsappWaMe)
+                                  : null,
+                            ),
+                          ],
                         ),
-                ),
-                if (_status?.telegramLinked != true)
-                  const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Text(
-                      'Fallback: open the bot in Telegram and share your phone contact if the link expires.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0088CC).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.telegram, color: Color(0xFF0088CC)),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Telegram',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _status?.telegramLinked == true ? 'Linked to your account' : 'Not linked yet',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_status?.telegramLinked == true)
+                              IconButton(
+                                icon: const Icon(Icons.link_off),
+                                tooltip: 'Unlink',
+                                onPressed: () async {
+                                  await ref.read(authRepositoryProvider).unlinkTelegram();
+                                  await _load();
+                                },
+                              )
+                            else
+                              FilledButton.tonal(
+                                onPressed: () async {
+                                  final url = await ref.read(authRepositoryProvider).telegramLinkUrl();
+                                  await _openUrl(url);
+                                },
+                                child: const Text('Link'),
+                              ),
+                          ],
+                        ),
+                        if (_status?.telegramLinked != true) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Fallback: open the bot in Telegram and share your phone contact if the link expires.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
     );

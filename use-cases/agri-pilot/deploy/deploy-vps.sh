@@ -203,12 +203,16 @@ setup_env_interactive() {
 }
 
 git_update() {
+  if [[ "${DEPLOY_SKIP_GIT:-0}" == "1" ]]; then
+    warn "DEPLOY_SKIP_GIT=1 — skipping git fetch/pull (deploying current tree on disk)."
+    return 0
+  fi
   cd "${REPO_ROOT}"
   if [[ ! -d .git ]]; then
     die "Not a git repository: ${REPO_ROOT}"
   fi
   if ! git diff --quiet || ! git diff --cached --quiet; then
-    die "Git worktree is dirty. Commit or stash changes before deploying."
+    die "Git worktree is dirty. Commit or stash changes before deploying, or set DEPLOY_SKIP_GIT=1 to deploy the current tree."
   fi
   local branch="${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
   log "Fetching and fast-forwarding branch ${branch}..."
@@ -370,6 +374,32 @@ show_failure_diagnostics() {
   fi
 }
 
+verify_plant_schema() {
+  log "Verifying plant tracking migration..."
+  compose exec -T db psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB:-agripilot}" -tAc \
+    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('plants','plant_observations');" \
+    | grep -qx '2' || die "Plant tracking tables missing after migration. Check migrate logs."
+}
+
+verify_plant_media() {
+  log "Verifying plant photo storage..."
+  compose exec -T app python -c \
+    "from marketplace.plant_media import media_root; p=media_root(); assert p.is_dir(), p; print('plant media:', p)" \
+    || die "Plant media directory is not writable. Check the plant-media volume mount."
+}
+
+print_post_deploy_notes() {
+  cat <<EOF
+
+Deploy notes:
+  - Plant tracking API is live (/api/farmer/scans, /api/farmer/plants*, buyer listing insights).
+  - Observation photos persist in Docker volume: ${COMPOSE_PROJECT_NAME}_plant-media
+  - Rebuild the mobile APK with: flutter build apk --release --dart-define=API_BASE_URL=https://${DOMAIN}
+  - Postgres backups do not include plant photos; archive the plant-media volume separately if needed.
+
+EOF
+}
+
 cmd_deploy() {
   acquire_lock
   require_cmd docker
@@ -418,10 +448,12 @@ cmd_deploy() {
   if [[ ${migrate_exit} -ne 0 ]]; then
     die "Migration failed with exit code ${migrate_exit}."
   fi
+  verify_plant_schema
 
   log "Starting application and Caddy..."
   compose up -d app caddy
   wait_for_service_healthy app 90
+  verify_plant_media
 
   if ! probe_public_health 30; then
     warn "Public HTTPS health check failed."
@@ -436,7 +468,13 @@ cmd_deploy() {
     mkdir -p "${STATE_DIR}"
     echo "${current_sha}" >"${LAST_SHA_FILE}"
   fi
+  print_post_deploy_notes
   log "Deployment successful."
+}
+
+cmd_update() {
+  log "Updating AgriPilot on this server (pull, rebuild, migrate, restart)..."
+  cmd_deploy "$@"
 }
 
 cmd_status() {
@@ -489,6 +527,7 @@ cmd_backup() {
   "git_sha": "${sha}",
   "domain": "${DOMAIN}",
   "postgres_dump": "$(basename "${dump}")",
+  "plant_media_volume": "${COMPOSE_PROJECT_NAME}_plant-media",
   "app_image_id": "${image_id}",
   "compose_project": "${COMPOSE_PROJECT_NAME}"
 }
@@ -536,6 +575,7 @@ Usage: $0 [command]
 
 Commands:
   deploy    Build, migrate, start stack, verify HTTPS /health (default)
+  update    Same as deploy — use on the VPS after git pull to roll out changes
   setup     Interactive first-time ${ENV_FILE} creation
   status    Show service status and probe public health
   logs      Follow logs (optional service: db|redis|migrate|app|caddy)
@@ -550,6 +590,10 @@ Bootstrap env vars (fresh VPS):
   BRANCH=main
   INSTALL_DIR=/opt/agent-kernel
 
+Server update env vars:
+  DEPLOY_SKIP_GIT=1   Deploy the current checkout without git pull (e.g. rsync'd tree)
+  BRANCH=main         Git branch to fast-forward when pulling (default: current branch)
+
 EOF
 }
 
@@ -558,6 +602,7 @@ main() {
   shift || true
   case "${cmd}" in
     deploy) cmd_deploy "$@" ;;
+    update) cmd_update "$@" ;;
     setup) setup_env_interactive ;;
     status) cmd_status "$@" ;;
     logs) cmd_logs "$@" ;;

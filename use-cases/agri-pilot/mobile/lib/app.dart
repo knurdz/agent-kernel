@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/routing/app_router.dart';
+import 'core/theme/app_theme.dart';
 
 class AgriPilotApp extends ConsumerWidget {
   const AgriPilotApp({super.key});
@@ -11,10 +12,7 @@ class AgriPilotApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(
       title: 'AgriPilot',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2E7D32)),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       routerConfig: router,
     );
   }

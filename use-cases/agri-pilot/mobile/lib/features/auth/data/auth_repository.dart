@@ -15,45 +15,73 @@ class AuthRepository {
     required String name,
     String? district,
   }) async {
-    await _dio.post('/api/auth/signup', data: {
-      'role': role,
-      'phone_number': phone,
-      'password': password,
-      'name': name,
-      if (district != null) 'district': district,
-    });
+    try {
+      await _dio.post('/api/auth/signup', data: {
+        'role': role,
+        'phone_number': phone,
+        'password': password,
+        'name': name,
+        if (district != null) 'district': district,
+      });
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 
   Future<String> login({required String phone, required String password}) async {
-    final resp = await _dio.post('/api/auth/login', data: {
-      'phone_number': phone,
-      'password': password,
-    });
-    return resp.data['access_token'] as String;
+    try {
+      final resp = await _dio.post('/api/auth/login', data: {
+        'phone_number': phone,
+        'password': password,
+      });
+      return resp.data['access_token'] as String;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 
   Future<UserMe> me() async {
-    final resp = await _dio.get('/api/auth/me');
-    return UserMe.fromJson(resp.data as Map<String, dynamic>);
+    try {
+      final resp = await _dio.get('/api/auth/me');
+      return UserMe.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 
   Future<UserMe> updateProfile(Map<String, dynamic> body) async {
-    final resp = await _dio.patch('/api/auth/me', data: body);
-    return UserMe.fromJson(resp.data as Map<String, dynamic>);
+    try {
+      final resp = await _dio.patch('/api/auth/me', data: body);
+      return UserMe.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 
   Future<ChannelsStatus> channels() async {
-    final resp = await _dio.get('/api/auth/me/channels');
-    return ChannelsStatus.fromJson(resp.data as Map<String, dynamic>);
+    try {
+      final resp = await _dio.get('/api/auth/me/channels');
+      return ChannelsStatus.fromJson(resp.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 
   Future<String> telegramLinkUrl() async {
-    final resp = await _dio.post('/api/auth/me/channels/telegram/link-token');
-    return resp.data['deep_link_url'] as String;
+    try {
+      final resp = await _dio.post('/api/auth/me/channels/telegram/link-token');
+      return resp.data['deep_link_url'] as String;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 
   Future<void> unlinkTelegram() async {
-    await _dio.delete('/api/auth/me/channels/telegram');
+    try {
+      await _dio.delete('/api/auth/me/channels/telegram');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
   }
 }
 

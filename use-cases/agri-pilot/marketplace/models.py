@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     text,
@@ -83,6 +84,7 @@ class User(Base):
         "BuyerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     listings: Mapped[list[Listing]] = relationship("Listing", back_populates="farmer", cascade="all, delete-orphan")
+    plants: Mapped[list[Plant]] = relationship("Plant", back_populates="farmer", cascade="all, delete-orphan")
     devices: Mapped[list[UserDevice]] = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan")
     notification_preferences: Mapped[NotificationPreference | None] = relationship(
         "NotificationPreference", back_populates="user", uselist=False, cascade="all, delete-orphan"
@@ -132,12 +134,67 @@ class Listing(Base):
         nullable=False,
         default=ListingStatus.active.value,
     )
+    plant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("plants.id", ondelete="SET NULL", use_alter=True),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
     farmer: Mapped[User] = relationship("User", back_populates="listings")
+    plant: Mapped[Plant | None] = relationship("Plant", back_populates="listing", foreign_keys=[plant_id])
+
+
+class Plant(Base):
+    __tablename__ = "plants"
+    __table_args__ = (
+        Index("ix_plants_farmer_id", "farmer_id"),
+        Index("ix_plants_listing_id", "listing_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    farmer_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    crop: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    planted_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    listing_id: Mapped[int | None] = mapped_column(
+        ForeignKey("listings.id", ondelete="SET NULL"), unique=True, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    farmer: Mapped[User] = relationship("User", back_populates="plants")
+    listing: Mapped[Listing | None] = relationship(
+        "Listing", back_populates="plant", foreign_keys=[listing_id], uselist=False
+    )
+    observations: Mapped[list[PlantObservation]] = relationship(
+        "PlantObservation", back_populates="plant", cascade="all, delete-orphan", order_by="PlantObservation.captured_at"
+    )
+
+
+class PlantObservation(Base):
+    __tablename__ = "plant_observations"
+    __table_args__ = (Index("ix_plant_observations_plant_id", "plant_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plant_id: Mapped[int] = mapped_column(ForeignKey("plants.id", ondelete="CASCADE"), nullable=False)
+    photo_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    quality_ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    quality_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    top_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    top_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    predictions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    advice_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="tracking")
+
+    plant: Mapped[Plant] = relationship("Plant", back_populates="observations")
 
 
 class ConnectionRequest(Base):

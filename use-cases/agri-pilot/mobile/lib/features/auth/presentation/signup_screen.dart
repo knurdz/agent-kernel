@@ -4,6 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../providers/auth_provider.dart';
+import 'auth_form_helpers.dart';
+import 'auth_screen_shell.dart';
+import 'auth_text_field.dart';
+import 'role_selector.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -21,7 +25,38 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   var _loading = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _phone.dispose();
+    _password.dispose();
+    _name.dispose();
+    _district.dispose();
+    super.dispose();
+  }
+
   Future<void> _submit() async {
+    final phoneInput = _phone.text.trim();
+    final password = _password.text;
+    final name = _name.text.trim();
+
+    final nameError = validateName(name);
+    if (nameError != null) {
+      setState(() => _error = nameError);
+      return;
+    }
+    final phoneError = validatePhone(phoneInput);
+    if (phoneError != null) {
+      setState(() => _error = phoneError);
+      return;
+    }
+    final passwordError = validatePassword(password, signup: true);
+    if (passwordError != null) {
+      setState(() => _error = passwordError);
+      return;
+    }
+
+    final phone = phoneForApi(phoneInput)!;
+
     setState(() {
       _loading = true;
       _error = null;
@@ -29,13 +64,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     try {
       await ref.read(authControllerProvider.notifier).signup(
             role: _role,
-            phone: _phone.text.trim(),
-            password: _password.text,
-            name: _name.text.trim(),
+            phone: phone,
+            password: password,
+            name: name,
             district: _district.text.trim().isEmpty ? null : _district.text.trim(),
           );
     } catch (e) {
-      setState(() => _error = e is ApiException ? e.message : e.toString());
+      if (mounted) setState(() => _error = apiErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -43,28 +78,56 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sign up')),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
+    return AuthScreenShell(
+      subtitle: 'Create your account',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          DropdownButtonFormField<String>(
+          RoleSelector(
             value: _role,
-            items: const [
-              DropdownMenuItem(value: 'farmer', child: Text('Farmer')),
-              DropdownMenuItem(value: 'buyer', child: Text('Buyer')),
-            ],
-            onChanged: (v) => setState(() => _role = v ?? 'farmer'),
-            decoration: const InputDecoration(labelText: 'Role'),
+            onChanged: (v) => setState(() => _role = v),
           ),
-          TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name')),
-          TextField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone E.164')),
-          TextField(controller: _district, decoration: const InputDecoration(labelText: 'District (optional)')),
-          TextField(controller: _password, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
-          if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: _loading ? null : _submit, child: Text(_loading ? '...' : 'Create account')),
-          TextButton(onPressed: () => context.go('/login'), child: const Text('Back to login')),
+          AuthTextField(
+            controller: _name,
+            label: 'Full name',
+            prefixIcon: Icons.person_outline,
+            textInputAction: TextInputAction.next,
+          ),
+          AuthTextField.phone(
+            controller: _phone,
+            textInputAction: TextInputAction.next,
+          ),
+          AuthTextField(
+            controller: _district,
+            label: 'District (optional)',
+            prefixIcon: Icons.location_on_outlined,
+            textInputAction: TextInputAction.next,
+          ),
+          AuthTextField.password(
+            controller: _password,
+            label: 'Password',
+            helperText: 'At least 8 characters',
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _loading ? null : _submit(),
+          ),
+          if (_error != null) authErrorBanner(_error!),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _loading ? null : _submit,
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            child: _loading
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Create account'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _loading ? null : () => context.go('/login'),
+            child: const Text('Already have an account? Log in'),
+          ),
         ],
       ),
     );

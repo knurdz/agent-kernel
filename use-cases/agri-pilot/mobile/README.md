@@ -46,9 +46,11 @@ Without Firebase, the app runs normally; push registration is skipped.
 |--------|-----|
 | Login / Signup | `/api/auth/*` |
 | Agent chat + photo | `POST /api/v1/chat`, `/api/v1/chat-multipart` (JWT) |
+| Quick crop scan | `POST /api/farmer/scans` |
+| My plants / plant detail | `/api/farmer/plants*` |
 | Chat history | `GET /api/v1/threads*` |
-| Farmer listings | `/api/farmer/listings` |
-| Buyer browse/match/connect | `/api/buyer/*` |
+| Farmer listings + import plant | `/api/farmer/listings`, `/api/farmer/listings/{id}/import-plant` |
+| Buyer browse/match/connect + listing insights | `/api/buyer/*` |
 | Connections + contact | `/api/*/connections*` |
 | Profile | `PATCH /api/auth/me` |
 | WhatsApp / Telegram | `/api/auth/me/channels`, `/api/config/public` |

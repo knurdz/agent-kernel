@@ -32,7 +32,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONHASHSEED=random
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin agripilot \
-    && mkdir -p /home/agripilot/.cache/chroma /home/agripilot/.cache/uv \
+    && mkdir -p /home/agripilot/.cache/chroma /home/agripilot/.cache/uv /app/data/plant_media \
     && chown -R agripilot:agripilot /app /home/agripilot
 
 USER agripilot

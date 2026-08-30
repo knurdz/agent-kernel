@@ -16,6 +16,7 @@ from marketplace.schemas import (
     ConnectionResponse,
     ConnectionWithListing,
     ContactResponse,
+    ListingInsights,
     ListingResponse,
     MatchResponse,
     PaginatedListings,
@@ -169,3 +170,17 @@ def get_contact_for_buyer(
         connection_id=conn.id,
         status=conn.status,
     )
+
+
+@router.get("/listings/{listing_id}/insights", response_model=ListingInsights)
+def get_listing_insights(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    buyer=Depends(_buyer_user),
+):
+    from marketplace.plant_service import get_listing_insights as _get_insights
+
+    insights = _get_insights(db, listing_id)
+    if not insights:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="insights not available")
+    return ListingInsights(**insights)

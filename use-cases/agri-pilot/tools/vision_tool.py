@@ -121,3 +121,72 @@ def diagnose_crop_image(image_path: str) -> dict[str, Any]:
         for prob, idx in zip(top.values, top.indices)
     ]
     return {"predictions": predictions}
+
+
+CONFIDENCE_THRESHOLD = 0.7
+
+
+def _short_advice_from_rag(crop: str, disease: str) -> str | None:
+    """Pull a brief non-chemical snippet from the knowledge base when available."""
+    try:
+        from tools.knowledge_tool import _query, _get_manager
+
+        result = _query(_get_manager(), crop, disease)
+        if not result.get("reliable"):
+            return None
+        evidence = result.get("evidence") or []
+        if not evidence:
+            return None
+        text = str(evidence[0].get("text") or "").strip()
+        if not text:
+            return None
+        # First sentence only; avoid storing chemical/dosage detail on observations.
+        for sep in (". ", "\n"):
+            if sep in text:
+                text = text.split(sep, 1)[0].strip()
+                break
+        return text[:280] if text else None
+    except Exception:
+        return None
+
+
+def analyze_crop_photo(image_path: str, *, crop: str | None = None) -> dict[str, Any]:
+    """Run quality gate + ViT classification for REST scan/tracking flows.
+
+    Returns a structured dict suitable for API responses and DB persistence.
+    Does not invoke the full LLM agent pipeline.
+    """
+    quality = check_image_quality(image_path)
+    if not quality.get("ok"):
+        return {
+            "quality_ok": False,
+            "quality_reason": quality.get("reason"),
+            "metrics": quality.get("metrics"),
+            "predictions": [],
+            "top_label": None,
+            "top_confidence": None,
+            "confident": False,
+            "advice_summary": None,
+        }
+
+    diagnosis = diagnose_crop_image(image_path)
+    predictions = diagnosis.get("predictions") or []
+    top = predictions[0] if predictions else None
+    top_label = top["label"] if top else None
+    top_confidence = top["confidence"] if top else None
+    confident = top_confidence is not None and float(top_confidence) >= CONFIDENCE_THRESHOLD
+
+    advice_summary = None
+    if confident and top_label and crop:
+        advice_summary = _short_advice_from_rag(crop.strip().lower(), top_label)
+
+    return {
+        "quality_ok": True,
+        "quality_reason": None,
+        "metrics": quality.get("metrics"),
+        "predictions": predictions,
+        "top_label": top_label,
+        "top_confidence": top_confidence,
+        "confident": confident,
+        "advice_summary": advice_summary,
+    }

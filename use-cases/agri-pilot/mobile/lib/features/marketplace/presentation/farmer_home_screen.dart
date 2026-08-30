@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/shell/main_shell.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/listing_card.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../auth/domain/models.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../plants/data/plants_repository.dart';
 import '../data/marketplace_repository.dart';
 
 class FarmerHomeScreen extends ConsumerStatefulWidget {
@@ -14,7 +20,9 @@ class FarmerHomeScreen extends ConsumerStatefulWidget {
 
 class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
   List<Listing> _listings = [];
+  List<PlantSummary> _plants = [];
   var _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -23,9 +31,21 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      _listings = await ref.read(marketplaceRepositoryProvider).farmerListings();
+      final repo = ref.read(marketplaceRepositoryProvider);
+      final plantsRepo = ref.read(plantsRepositoryProvider);
+      final results = await Future.wait([
+        repo.farmerListings(),
+        plantsRepo.listPlants(),
+      ]);
+      _listings = results[0] as List<Listing>;
+      _plants = results[1] as List<PlantSummary>;
+    } catch (e) {
+      _error = e.toString();
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -35,68 +55,414 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
     final crop = TextEditingController();
     final qty = TextEditingController();
     final price = TextEditingController();
-    final ok = await showDialog<bool>(
+    String? formError;
+
+    final created = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 8,
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom + 24,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'New listing',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: crop,
+                    decoration: const InputDecoration(
+                      labelText: 'Crop',
+                      hintText: 'e.g. tomato',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: qty,
+                    decoration: const InputDecoration(
+                      labelText: 'Quantity (kg)',
+                      hintText: '500',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: price,
+                    decoration: const InputDecoration(
+                      labelText: 'Price per kg (optional)',
+                      hintText: '120',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  if (formError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () async {
+                      final cropVal = crop.text.trim();
+                      final qtyVal = double.tryParse(qty.text.trim());
+                      if (cropVal.isEmpty) {
+                        setSheetState(() => formError = 'Enter a crop name');
+                        return;
+                      }
+                      if (qtyVal == null || qtyVal <= 0) {
+                        setSheetState(() => formError = 'Enter a valid quantity');
+                        return;
+                      }
+                      final priceVal = price.text.trim().isEmpty ? null : double.tryParse(price.text.trim());
+                      if (price.text.trim().isNotEmpty && (priceVal == null || priceVal < 0)) {
+                        setSheetState(() => formError = 'Enter a valid price');
+                        return;
+                      }
+                      try {
+                        await ref.read(marketplaceRepositoryProvider).createListing(
+                              crop: cropVal,
+                              qty: qtyVal,
+                              price: priceVal,
+                            );
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        setSheetState(() => formError = e.toString());
+                      }
+                    },
+                    child: const Text('Create listing'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    crop.dispose();
+    qty.dispose();
+    price.dispose();
+
+    if (created == true) {
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Listing created')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteListing(int id) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New listing'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: crop, decoration: const InputDecoration(labelText: 'Crop')),
-          TextField(controller: qty, decoration: const InputDecoration(labelText: 'Quantity kg'), keyboardType: TextInputType.number),
-          TextField(controller: price, decoration: const InputDecoration(labelText: 'Price/kg'), keyboardType: TextInputType.number),
-        ]),
+        title: const Text('Delete listing?'),
+        content: const Text('This cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
         ],
       ),
     );
-    if (ok != true) return;
-    await ref.read(marketplaceRepositoryProvider).createListing(
-          crop: crop.text,
-          qty: double.parse(qty.text),
-          price: price.text.isEmpty ? null : double.parse(price.text),
-        );
+    if (confirmed != true) return;
+    await ref.read(marketplaceRepositoryProvider).deleteListing(id);
     await _refresh();
+  }
+
+  Future<void> _trackListing(Listing listing) async {
+    try {
+      final plant = await ref.read(plantsRepositoryProvider).importFromListing(listing.id);
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Now tracking ${listing.crop}')),
+        );
+        context.go('/home/plants/${plant.id}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
+  void _showListingActions(Listing listing) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!listing.isTracked)
+              ListTile(
+                leading: const Icon(Icons.eco_outlined),
+                title: const Text('Track this crop'),
+                subtitle: const Text('Monitor health and share insights with buyers'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _trackListing(listing);
+                },
+              ),
+            if (listing.isTracked)
+              ListTile(
+                leading: const Icon(Icons.link),
+                title: const Text('View tracked plant'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.go('/home/plants/${listing.plantId}');
+                },
+              ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              title: Text('Delete listing', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteListing(listing.id);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(authControllerProvider).asData?.value;
+    final theme = Theme.of(context);
+    final pendingAsync = ref.watch(pendingConnectionsCountProvider);
+    final pendingCount = pendingAsync.asData?.value ?? 0;
+    final district = user?.profile?.district;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Farmer'),
-        actions: [
-          IconButton(onPressed: () => context.push('/chat'), icon: const Icon(Icons.chat)),
-          IconButton(onPressed: () => context.push('/connections'), icon: const Icon(Icons.inbox)),
-          IconButton(onPressed: () => context.push('/channels'), icon: const Icon(Icons.link)),
-          IconButton(onPressed: () => context.push('/profile'), icon: const Icon(Icons.person)),
-        ],
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Hi, ${user?.name ?? 'Farmer'}'),
+            if (district != null && district.isNotEmpty)
+              Text(
+                district,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _createListing,
+        icon: const Icon(Icons.add),
+        label: const Text('New listing'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _refresh,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
                 children: [
-                  FilledButton(onPressed: _createListing, child: const Text('Create listing')),
-                  const SizedBox(height: 16),
-                  const Text('My listings', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ..._listings.map(
-                    (l) => ListTile(
-                      title: Text('${l.crop} — ${l.quantityKg}kg'),
-                      subtitle: Text('${l.status}${l.pricePerKg != null ? ' @ ${l.pricePerKg}/kg' : ''}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () async {
-                          await ref.read(marketplaceRepositoryProvider).deleteListing(l.id);
-                          await _refresh();
+                  _AskAiCard(onTap: () => context.go('/chat')),
+                  if (pendingCount > 0) ...[
+                    const SizedBox(height: 12),
+                    _InboxTeaser(
+                      count: pendingCount,
+                      onTap: () => context.go('/connections'),
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      color: theme.colorScheme.errorContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Could not load data. Pull to retry.',
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                        ),
+                      ),
+                    ),
+                  ],
+                  SectionHeader(
+                    title: 'My plants (${_plants.length})',
+                    actionLabel: 'See all',
+                    onAction: () => context.go('/home/plants'),
+                  ),
+                  if (_plants.isEmpty)
+                    Card(
+                      child: ListTile(
+                        leading: Icon(Icons.eco_outlined, color: theme.colorScheme.primary),
+                        title: const Text('Start tracking a crop'),
+                        subtitle: const Text('Monitor health from planting to harvest'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.go('/home/plants'),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      height: 110,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _plants.length.clamp(0, 5),
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) {
+                          final p = _plants[i];
+                          return SizedBox(
+                            width: 160,
+                            child: Card(
+                              child: InkWell(
+                                onTap: () => context.go('/home/plants/${p.id}'),
+                                borderRadius: BorderRadius.circular(16),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      Text('${p.observationCount} photos', style: theme.textTheme.bodySmall),
+                                      if (p.latestLabel != null)
+                                        Text(
+                                          p.latestLabel!.replaceAll('_', ' '),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
                         },
                       ),
                     ),
-                  ),
+                  const SizedBox(height: 16),
+                  SectionHeader(title: 'My listings (${_listings.length})'),
+                  if (_listings.isEmpty && _error == null)
+                    const EmptyState(
+                      icon: Icons.storefront_outlined,
+                      title: 'No listings yet',
+                      subtitle: 'Tap "New listing" to sell your harvest on the marketplace.',
+                    )
+                  else
+                    ..._listings.map(
+                      (l) => ListingCard(
+                        listing: l,
+                        onTap: () => _showListingActions(l),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.more_vert),
+                          onPressed: () => _showListingActions(l),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _AskAiCard extends StatelessWidget {
+  const _AskAiCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primary,
+                theme.colorScheme.primary.withValues(alpha: 0.85),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.smart_toy, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ask AgriPilot',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Diagnose crops, get advice, check weather',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios, color: Colors.white.withValues(alpha: 0.8), size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InboxTeaser extends StatelessWidget {
+  const _InboxTeaser({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: ListTile(
+        leading: Badge(
+          label: Text('$count'),
+          child: Icon(Icons.inbox, color: theme.colorScheme.primary),
+        ),
+        title: Text('$count pending request${count == 1 ? '' : 's'}'),
+        subtitle: const Text('Buyers want to connect with you'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
     );
   }
 }

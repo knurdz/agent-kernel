@@ -8,6 +8,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from marketplace.auth import normalize_phone
+
 PHONE_RE = re.compile(r"^\+[1-9]\d{7,14}$")
 
 
@@ -25,23 +27,23 @@ class SignupRequest(BaseModel):
     @field_validator("phone_number")
     @classmethod
     def validate_phone(cls, v: str) -> str:
-        # Normalize: strip spaces/dashes like auth.normalize_phone, but keep validation here too.
-        norm = re.sub(r"[\s\-\(\)]", "", v.strip())
-        if not PHONE_RE.match(norm):
-            raise ValueError("phone_number must be E.164, e.g. +94770000001")
-        return norm
+        try:
+            return normalize_phone(v)
+        except ValueError as exc:
+            raise ValueError("phone_number must be E.164, e.g. +94770000001") from exc
 
     @field_validator("contact_phone_number")
     @classmethod
     def validate_contact_phone(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
-        norm = re.sub(r"[\s\-\(\)]", "", v.strip())
-        if not norm:
+        stripped = re.sub(r"[\s\-\(\)]", "", v.strip())
+        if not stripped:
             return None
-        if not PHONE_RE.match(norm):
-            raise ValueError("contact_phone_number must be E.164, e.g. +94770000002")
-        return norm
+        try:
+            return normalize_phone(v)
+        except ValueError as exc:
+            raise ValueError("contact_phone_number must be E.164, e.g. +94770000002") from exc
 
 
 class LoginRequest(BaseModel):
@@ -51,10 +53,10 @@ class LoginRequest(BaseModel):
     @field_validator("phone_number")
     @classmethod
     def validate_phone(cls, v: str) -> str:
-        norm = re.sub(r"[\s\-\(\)]", "", v.strip())
-        if not PHONE_RE.match(norm):
-            raise ValueError("phone_number must be E.164")
-        return norm
+        try:
+            return normalize_phone(v)
+        except ValueError as exc:
+            raise ValueError("phone_number must be E.164") from exc
 
 
 class TokenResponse(BaseModel):
@@ -121,6 +123,7 @@ class ListingResponse(BaseModel):
     price_per_kg: Optional[float] = None
     harvest_date: Optional[date] = None
     status: str
+    plant_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -283,3 +286,107 @@ class NotificationPreferencesResponse(BaseModel):
     connection_updates: bool
 
     model_config = {"from_attributes": True}
+
+
+class PlantCreate(BaseModel):
+    crop: str = Field(min_length=1, max_length=80)
+    name: Optional[str] = Field(default=None, max_length=120)
+    planted_on: Optional[date] = None
+    listing_id: Optional[int] = None
+
+    @field_validator("crop")
+    @classmethod
+    def normalize_crop(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("crop must be non-empty")
+        return v.lower()
+
+
+class PredictionOut(BaseModel):
+    label: str
+    confidence: float
+
+
+class ScanResult(BaseModel):
+    quality_ok: bool
+    quality_reason: Optional[str] = None
+    predictions: list[PredictionOut] = Field(default_factory=list)
+    top_label: Optional[str] = None
+    top_confidence: Optional[float] = None
+    confident: bool = False
+    advice_summary: Optional[str] = None
+
+
+class PlantObservationOut(BaseModel):
+    id: int
+    plant_id: int
+    captured_at: datetime
+    quality_ok: bool
+    quality_reason: Optional[str] = None
+    top_label: Optional[str] = None
+    top_confidence: Optional[float] = None
+    predictions: Optional[list[PredictionOut]] = None
+    advice_summary: Optional[str] = None
+    source: str
+    photo_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PlantInsights(BaseModel):
+    crop: str
+    observation_count: int
+    first_observation_date: Optional[str] = None
+    last_observation_date: Optional[str] = None
+    latest_label: Optional[str] = None
+    latest_confidence: Optional[float] = None
+    timeline: list[dict] = Field(default_factory=list)
+    trend: str
+
+
+class PlantSummary(BaseModel):
+    id: int
+    crop: str
+    name: str
+    planted_on: Optional[date] = None
+    listing_id: Optional[int] = None
+    observation_count: int = 0
+    latest_label: Optional[str] = None
+    trend: str = "unknown"
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PlantDetail(BaseModel):
+    id: int
+    crop: str
+    name: str
+    planted_on: Optional[date] = None
+    listing_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    observations: list[PlantObservationOut]
+    insights: PlantInsights
+
+
+class PaginatedPlants(BaseModel):
+    items: list[PlantSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+class ListingInsights(BaseModel):
+    listing_id: int
+    plant_id: int
+    crop: str
+    observation_count: int
+    first_observation_date: Optional[str] = None
+    last_observation_date: Optional[str] = None
+    latest_label: Optional[str] = None
+    latest_confidence: Optional[float] = None
+    timeline: list[dict] = Field(default_factory=list)
+    trend: str

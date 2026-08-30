@@ -80,6 +80,7 @@ services:
       AK_MULTIMODAL__REDIS__URL: redis://redis:6379
       AK_THREAD__TYPE: redis
       AK_THREAD__REDIS__URL: redis://redis:6379
+      AGRIPILOT_PLANT_MEDIA_ROOT: /app/data/plant_media
     depends_on:
       db:
         condition: service_healthy
@@ -91,6 +92,7 @@ services:
       - agripilot
     volumes:
       - chroma-cache:/home/agripilot/.cache/chroma
+      - plant-media:/app/data/plant_media
     healthcheck:
       test:
         [
@@ -139,5 +141,6 @@ volumes:
   pgdata:
   redisdata:
   chroma-cache:
+  plant-media:
   caddy-data:
   caddy-config:

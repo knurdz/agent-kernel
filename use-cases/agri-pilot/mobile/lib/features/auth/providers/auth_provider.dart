@@ -41,7 +41,6 @@ class AuthController extends StateNotifier<AsyncValue<UserMe?>> {
   }
 
   Future<void> login(String phone, String password) async {
-    state = const AsyncLoading();
     try {
       final token = await _repo.login(phone: phone, password: password);
       await _tokenStore.saveToken(token);
@@ -49,7 +48,7 @@ class AuthController extends StateNotifier<AsyncValue<UserMe?>> {
       state = AsyncData(user);
       await _push.registerDeviceIfPossible();
     } catch (e) {
-      state = AsyncError(e, StackTrace.current);
+      state = const AsyncData(null);
       rethrow;
     }
   }

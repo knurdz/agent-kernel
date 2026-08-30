@@ -18,6 +18,7 @@ from marketplace.routers.buyer import router as buyer_router
 from marketplace.routers.config import router as config_router
 from marketplace.routers.devices import router as devices_router
 from marketplace.routers.farmer import router as farmer_router
+from marketplace.routers.plants import router as plants_router
 from mobile_api.authenticated_chat_handler import AuthenticatedMobileChatHandler
 from telegram_handler import GatedTelegramHandler
 from whatsapp_handler import FastAckWhatsAppHandler
@@ -29,6 +30,7 @@ LangGraphModule([triage_agent])
 
 RESTAPI.add(auth_router)
 RESTAPI.add(farmer_router)
+RESTAPI.add(plants_router)
 RESTAPI.add(buyer_router)
 RESTAPI.add(config_router)
 RESTAPI.add(devices_router)

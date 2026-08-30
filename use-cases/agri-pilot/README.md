@@ -14,6 +14,8 @@ Marketplace adds `marketplace/` (DB, auth, service, `notifications.py`, `routers
 
 Durable memory: sessions and multimodal attachments are Redis-backed under Docker (`AK_SESSION__*` / `AK_MULTIMODAL__*` overrides on the compose `redis` service), so conversations survive container restarts — over WhatsApp the sender's phone number *is* the session id. `state/farmer_profile.py` + `tools/profile_tools.py` keep a per-session case history (crop, disease, severity, advice, date, follow-up status); vision records diagnoses, knowledge records validated advice, and triage Step 2b resolves "it"/"getting worse" against the stored profile instead of re-asking.
 
+**Plant tracking & crop scans:** farmers can run a **one-time crop scan** (`POST /api/farmer/scans`) or maintain a **plant list** with a photo timeline (`/api/farmer/plants*`). Image analysis reuses the existing HuggingFace ViT pipeline in `tools/vision_tool.py` (`check_image_quality` + `diagnose_crop_image` via `analyze_crop_photo`) — no separate vision API. Observation photos persist on disk under `data/plant_media/` (Docker volume `plant-media`; override with `AGRIPILOT_PLANT_MEDIA_ROOT`). A sell listing can be linked 1:1 to a tracked plant (`POST /api/farmer/listings/{id}/import-plant`); buyers then see **crop-health insights** on that listing (`GET /api/buyer/listings/{id}/insights`) — observation counts, diagnosis timeline, and trend — without raw photos or chemical advice. Chat diagnosis (supervisor → vision → knowledge) remains unchanged for conversational advice.
+
 ## Prerequisites
 
 - Python `>=3.12`, `uv` (see `pyproject.toml:6`)
@@ -51,6 +53,13 @@ New API surfaces (mobile):
 | `POST` | `/api/devices/register` | JWT |
 | `DELETE` | `/api/devices/unregister` | JWT |
 | `GET/PATCH` | `/api/devices/notification-preferences` | JWT |
+| `POST` | `/api/farmer/scans` | JWT farmer+active |
+| `GET/POST` | `/api/farmer/plants` | JWT farmer+active |
+| `GET` | `/api/farmer/plants/{id}` | JWT farmer+active |
+| `POST` | `/api/farmer/plants/{id}/observations` | JWT farmer+active |
+| `GET` | `/api/farmer/plants/{id}/observations/{obs_id}/photo` | JWT farmer+active |
+| `POST` | `/api/farmer/listings/{id}/import-plant` | JWT farmer+active |
+| `GET` | `/api/buyer/listings/{id}/insights` | JWT buyer |
 
 `demo.py:5` calls `load_dotenv(".env.local")` **before** importing `agentkernel` — keep that order in new entrypoints. `AK_` env vars override `config.yaml` with `__` nesting (e.g. `AK_GUARDRAIL__INPUT__ENABLED=false`, `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1` dev bypass).
 
@@ -69,6 +78,7 @@ Key `.env.local.example:78` knobs:
 | `AK_WHATSAPP__ACCESS_TOKEN` / `PHONE_NUMBER_ID` / `VERIFY_TOKEN` / `APP_SECRET` | Cloud API (see `API / WhatsApp` below) |
 | `AK_TELEGRAM__BOT_TOKEN` / `AK_TELEGRAM__WEBHOOK_SECRET` | Telegram Bot API — token from @BotFather; secret echoed back as `X-Telegram-Bot-Api-Secret-Token` (see `API / Telegram`) |
 | `AGRIPILOT_TOOL_MAX_CALLS` / `AGRIPILOT_TOOL_TIMEOUT_SECONDS` | `tools/tool_guard.py:44` limits |
+| `AGRIPILOT_PLANT_MEDIA_ROOT` | default `data/plant_media/` — on-disk plant observation photos (Docker volume `plant-media`) |
 
 ## Marketplace — Roles & Auth
 
@@ -142,6 +152,13 @@ curl -s -X DELETE $BASE/api/farmer/listings/1 -H "Authorization: Bearer $F_TOKEN
 | `POST` | `/api/buyer/listings/{id}/connect` | `buyer` | `ConnectionCreate{message?≤500}` → `201 ConnectionResponse pending` `409` duplicate pending, `404` inactive, best-effort `marketplace/notifications.py:7` WhatsApp to farmer |
 | `GET` | `/api/buyer/connections` | `buyer` | own `[ConnectionWithListing]` (no phone) |
 | `GET` | `/api/buyer/connections/{id}/contact` | `buyer` owner | `ContactResponse{phone_number (farmer contact_phone or primary),...}` only `accepted`/`completed` |
+| `POST` | `/api/farmer/scans` | `farmer+active` | multipart `image` + optional `crop` → `ScanResult` (one-time ViT analysis; does not create a plant) |
+| `GET/POST` | `/api/farmer/plants` | `farmer+active` | list/create tracked plants (`PlantCreate{crop,name?,planted_on?,listing_id?}`) |
+| `GET` | `/api/farmer/plants/{id}` | `farmer+active` | plant detail + observations + derived insights |
+| `POST` | `/api/farmer/plants/{id}/observations` | `farmer+active` | multipart photo → analyze + append observation |
+| `GET` | `/api/farmer/plants/{id}/observations/{obs_id}/photo` | `farmer+active` | farmer-only observation photo |
+| `POST` | `/api/farmer/listings/{id}/import-plant` | `farmer+active` | create plant from listing crop; 1:1 link (`409` if already linked) |
+| `GET` | `/api/buyer/listings/{id}/insights` | `buyer` | public crop-health summary when listing linked to tracked plant; `404` otherwise (no photos/chemicals) |
 
 ### Buyer flow curl
 
@@ -279,19 +296,31 @@ First run of `./deploy/deploy-vps.sh setup` generates strong JWT/Postgres/WhatsA
 
 ### Update workflow
 
-From the AgriPilot directory on the VPS:
+From the AgriPilot directory on the VPS (after pushing your branch to the remote):
 
 ```bash
 cd /opt/agent-kernel/use-cases/agri-pilot
-./deploy/deploy-vps.sh deploy
+git pull --ff-only origin main   # optional — deploy also pulls when the tree is clean
+./deploy/deploy-vps.sh update
 ```
 
-The script fast-forwards the configured Git branch, rebuilds the app image, runs `alembic upgrade head`, restarts services, and probes `https://<DOMAIN>/health`. Named volumes (Postgres, Redis, Caddy certs, Chroma cache) are retained across redeploys.
+`update` is an alias for `deploy`. The script fast-forwards the configured Git branch (unless `DEPLOY_SKIP_GIT=1`), rebuilds the app image, runs `alembic upgrade head` (including plant-tracking tables), creates the `plant-media` volume if missing, restarts services, and probes `https://<DOMAIN>/health`. Named volumes (Postgres, Redis, Caddy certs, Chroma cache, **plant-media**) are retained across redeploys.
+
+If you copied code to the server without git (rsync/scp), deploy the tree on disk:
+
+```bash
+cd /opt/agent-kernel/use-cases/agri-pilot
+DEPLOY_SKIP_GIT=1 ./deploy/deploy-vps.sh update
+```
+
+After a successful deploy, rebuild the mobile release APK with `--dart-define=API_BASE_URL=https://<DOMAIN>`.
 
 ### Operations
 
 | Command | Purpose |
 |---------|---------|
+| `./deploy/deploy-vps.sh deploy` | Full deploy (build, migrate, start, verify) |
+| `./deploy/deploy-vps.sh update` | Same as deploy — recommended on the VPS after pulling changes |
 | `./deploy/deploy-vps.sh status` | Container status + public `/health` probe |
 | `./deploy/deploy-vps.sh logs [service]` | Follow logs (`db`, `redis`, `app`, `caddy`, …) |
 | `./deploy/deploy-vps.sh restart` | Restart app + Caddy |

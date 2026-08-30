@@ -23,10 +23,27 @@ _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def normalize_phone(phone: str) -> str:
-    norm = re.sub(r"[\s\-\(\)]", "", str(phone).strip())
-    if not PHONE_RE.match(norm):
+    stripped = re.sub(r"[\s\-\(\)]", "", str(phone).strip())
+    if not stripped:
         raise ValueError(f"phone_number must be E.164, got {phone!r}")
-    return norm
+
+    if stripped.startswith("+"):
+        candidate = stripped
+    elif stripped.isdigit():
+        if stripped.startswith("94") and len(stripped) == 11:
+            candidate = f"+{stripped}"
+        elif stripped.startswith("0") and len(stripped) == 10:
+            candidate = f"+94{stripped[1:]}"
+        elif len(stripped) == 9 and stripped.startswith("7"):
+            candidate = f"+94{stripped}"
+        else:
+            raise ValueError(f"phone_number must be E.164, got {phone!r}")
+    else:
+        raise ValueError(f"phone_number must be E.164, got {phone!r}")
+
+    if not PHONE_RE.match(candidate):
+        raise ValueError(f"phone_number must be E.164, got {phone!r}")
+    return candidate
 
 
 def hash_password(plain: str) -> str:
