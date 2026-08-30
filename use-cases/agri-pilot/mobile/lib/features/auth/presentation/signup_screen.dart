@@ -22,6 +22,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _name = TextEditingController();
   final _district = TextEditingController();
   String _role = 'farmer';
+  var _hasVehicle = false;
   var _loading = false;
   String? _error;
 
@@ -68,6 +69,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
             password: password,
             name: name,
             district: _district.text.trim().isEmpty ? null : _district.text.trim(),
+            hasVehicle: _role == 'rider' ? _hasVehicle : null,
           );
     } catch (e) {
       if (mounted) setState(() => _error = apiErrorMessage(e));
@@ -110,6 +112,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _loading ? null : _submit(),
           ),
+          if (_role == 'rider') ...[
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _hasVehicle,
+              onChanged: (v) => setState(() => _hasVehicle = v ?? false),
+              title: const Text('I have access to a vehicle for deliveries'),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
           if (_error != null) authErrorBanner(_error!),
           const SizedBox(height: 8),
           FilledButton(

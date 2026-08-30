@@ -17,26 +17,36 @@ class RoleSelector extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'I am a',
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
+          Text('I am a', style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _RoleCard(
-                label: 'Farmer',
-                icon: Icons.grass,
-                selected: value == 'farmer',
-                onTap: () => onChanged('farmer'),
-              )),
-              const SizedBox(width: 12),
-              Expanded(child: _RoleCard(
-                label: 'Buyer',
-                icon: Icons.storefront_outlined,
-                selected: value == 'buyer',
-                onTap: () => onChanged('buyer'),
-              )),
+              Expanded(
+                child: _RoleCard(
+                  label: 'Farmer',
+                  icon: Icons.grass,
+                  selected: value == 'farmer',
+                  onTap: () => onChanged('farmer'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _RoleCard(
+                  label: 'Buyer',
+                  icon: Icons.storefront_outlined,
+                  selected: value == 'buyer',
+                  onTap: () => onChanged('buyer'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _RoleCard(
+                  label: 'Rider',
+                  icon: Icons.delivery_dining,
+                  selected: value == 'rider',
+                  onTap: () => onChanged('rider'),
+                ),
+              ),
             ],
           ),
         ],
@@ -74,22 +84,19 @@ class _RoleCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           child: Column(
             children: [
-              Icon(icon, color: selected ? primary : null),
-              const SizedBox(height: 8),
+              Icon(icon, color: selected ? primary : null, size: 22),
+              const SizedBox(height: 6),
               Text(
                 label,
                 style: TextStyle(
+                  fontSize: 12,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                   color: selected ? primary : null,
                 ),
               ),
-              if (selected) ...[
-                const SizedBox(height: 4),
-                Icon(Icons.check_circle, size: 18, color: primary),
-              ],
             ],
           ),
         ),

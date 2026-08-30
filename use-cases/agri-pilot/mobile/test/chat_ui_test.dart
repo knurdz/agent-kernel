@@ -21,25 +21,25 @@ void main() {
     });
   });
 
-  testWidgets('AnalysingStatus.photo shows first message', (tester) async {
+  testWidgets('AnalysingStatus.photo shows static message', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: AnalysingStatus.photo()),
       ),
     );
 
-    expect(find.text('Looking at your crop…'), findsOneWidget);
+    expect(find.text('Analysing crop…'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('AnalysingStatus.text shows first message', (tester) async {
+  testWidgets('AnalysingStatus.text shows static message', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: AnalysingStatus.text()),
       ),
     );
 
-    expect(find.text('Thinking about your question…'), findsOneWidget);
+    expect(find.text('Thinking…'), findsOneWidget);
   });
 
   test('ChatBubble keeps image file for preview rendering', () {

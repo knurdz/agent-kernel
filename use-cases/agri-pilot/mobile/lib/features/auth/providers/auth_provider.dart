@@ -59,8 +59,16 @@ class AuthController extends StateNotifier<AsyncValue<UserMe?>> {
     required String password,
     required String name,
     String? district,
+    bool? hasVehicle,
   }) async {
-    await _repo.signup(role: role, phone: phone, password: password, name: name, district: district);
+    await _repo.signup(
+      role: role,
+      phone: phone,
+      password: password,
+      name: name,
+      district: district,
+      hasVehicle: hasVehicle,
+    );
     await login(phone, password);
   }
 

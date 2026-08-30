@@ -52,108 +52,12 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
   }
 
   Future<void> _createListing() async {
-    final crop = TextEditingController();
-    final qty = TextEditingController();
-    final price = TextEditingController();
-    String? formError;
-
     final created = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 8,
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom + 24,
-          ),
-          child: StatefulBuilder(
-            builder: (context, setSheetState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'New listing',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: crop,
-                    decoration: const InputDecoration(
-                      labelText: 'Crop',
-                      hintText: 'e.g. tomato',
-                    ),
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: qty,
-                    decoration: const InputDecoration(
-                      labelText: 'Quantity (kg)',
-                      hintText: '500',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: price,
-                    decoration: const InputDecoration(
-                      labelText: 'Price per kg (optional)',
-                      hintText: '120',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                  if (formError != null) ...[
-                    const SizedBox(height: 8),
-                    Text(formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ],
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      final cropVal = crop.text.trim();
-                      final qtyVal = double.tryParse(qty.text.trim());
-                      if (cropVal.isEmpty) {
-                        setSheetState(() => formError = 'Enter a crop name');
-                        return;
-                      }
-                      if (qtyVal == null || qtyVal <= 0) {
-                        setSheetState(() => formError = 'Enter a valid quantity');
-                        return;
-                      }
-                      final priceVal = price.text.trim().isEmpty ? null : double.tryParse(price.text.trim());
-                      if (price.text.trim().isNotEmpty && (priceVal == null || priceVal < 0)) {
-                        setSheetState(() => formError = 'Enter a valid price');
-                        return;
-                      }
-                      try {
-                        await ref.read(marketplaceRepositoryProvider).createListing(
-                              crop: cropVal,
-                              qty: qtyVal,
-                              price: priceVal,
-                            );
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } catch (e) {
-                        setSheetState(() => formError = e.toString());
-                      }
-                    },
-                    child: const Text('Create listing'),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+      builder: (_) => const _CreateListingSheet(),
     );
-
-    crop.dispose();
-    qty.dispose();
-    price.dispose();
 
     if (created == true) {
       await _refresh();
@@ -374,6 +278,141 @@ class _FarmerHomeScreenState extends ConsumerState<FarmerHomeScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _CreateListingSheet extends ConsumerStatefulWidget {
+  const _CreateListingSheet();
+
+  @override
+  ConsumerState<_CreateListingSheet> createState() => _CreateListingSheetState();
+}
+
+class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
+  late final TextEditingController _crop;
+  late final TextEditingController _qty;
+  late final TextEditingController _price;
+  String? _formError;
+  var _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _crop = TextEditingController();
+    _qty = TextEditingController();
+    _price = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _crop.dispose();
+    _qty.dispose();
+    _price.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismissSheet({required bool success}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    if (mounted) Navigator.pop(context, success);
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    final cropVal = _crop.text.trim();
+    final qtyVal = double.tryParse(_qty.text.trim());
+    if (cropVal.isEmpty) {
+      setState(() => _formError = 'Enter a crop name');
+      return;
+    }
+    if (qtyVal == null || qtyVal <= 0) {
+      setState(() => _formError = 'Enter a valid quantity');
+      return;
+    }
+    final priceVal = _price.text.trim().isEmpty ? null : double.tryParse(_price.text.trim());
+    if (_price.text.trim().isNotEmpty && (priceVal == null || priceVal < 0)) {
+      setState(() => _formError = 'Enter a valid price');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _formError = null;
+    });
+    try {
+      await ref.read(marketplaceRepositoryProvider).createListing(
+            crop: cropVal,
+            qty: qtyVal,
+            price: priceVal,
+          );
+      await _dismissSheet(success: true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _formError = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 8,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'New listing',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _crop,
+            decoration: const InputDecoration(
+              labelText: 'Crop',
+              hintText: 'e.g. tomato',
+            ),
+            textCapitalization: TextCapitalization.words,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _qty,
+            decoration: const InputDecoration(
+              labelText: 'Quantity (kg)',
+              hintText: '500',
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _price,
+            decoration: const InputDecoration(
+              labelText: 'Price per kg (optional)',
+              hintText: '120',
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          if (_formError != null) ...[
+            const SizedBox(height: 8),
+            Text(_formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _submitting ? null : _submit,
+            child: const Text('Create listing'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -11,12 +11,19 @@ limitation reply instead of a handoff.
 from agentkernel.langgraph import LangGraphToolBuilder
 from langgraph_supervisor import create_supervisor
 
+from agents.delivery_agent import delivery_agent
 from agents.knowledge_agent import knowledge_agent
 from agents.model import get_chat_model, get_judge_model
 from agents.resource_agent import resource_agent
 from agents.supervisor_guardrails import build_narration_judge, build_supervisor_post_model_hook
 from agents.vision_agent import vision_agent
 from tools.context_tools import get_farmer_context, update_farmer_context
+from tools.delivery_tools import (
+    my_orders_tool,
+    nearby_delivery_jobs_tool,
+    order_status_tool,
+    rider_active_job_tool,
+)
 from tools.marketplace_tools import (
     browse_listings_tool,
     connect_to_listing_tool,
@@ -51,6 +58,10 @@ tools = LangGraphToolBuilder.bind(
         browse_listings_tool,
         match_listings_tool,
         connect_to_listing_tool,
+        my_orders_tool,
+        order_status_tool,
+        rider_active_job_tool,
+        nearby_delivery_jobs_tool,
     ]
 )
 
@@ -64,7 +75,7 @@ tools = LangGraphToolBuilder.bind(
 supervisor_post_model_hook = build_supervisor_post_model_hook(
     model=get_chat_model(),
     extra_tools=tools,
-    agent_names=["vision", "knowledge", "resource"],
+    agent_names=["vision", "knowledge", "resource", "delivery"],
     judge=build_narration_judge(get_judge_model()),
 )
 
@@ -80,6 +91,7 @@ Classify every farmer message into exactly one of these categories:
 - WEATHER: weather query/risk, spray timing, planting/harvest timing
 - GENERAL: crop selection, planting, cultivation, harvesting, storage, and other general farming questions
 - SYSTEM: help, language change, location change, profile, unclear/unknown
+- DELIVERY: order status, rider tracking, pickup/delivery progress, available rider jobs
 
 Call update_farmer_context with the classified `intent`.
 
@@ -151,6 +163,7 @@ follow_up_status "resolved".
 - If the farmer asks to see their own sell listings ("show my listings", "my tomatoes stock"), call list_my_listings_tool. If they ask to remove/delete a listing ("delete listing 5", "remove my tomato listing"), call delete_listing_tool with the listing ID.
 - Buyer discovery: if the user asks to see/find/match listings ("show me tomato listings near Kandy", "I need 200kg of rice"), call browse_listings_tool or match_listings_tool with extracted filters. Prefer match_listings_tool when the buyer states a desired quantity. Both require login — if the tool returns not authenticated, tell the user to log in via the app.
 - Buyer connect: if the buyer says "I want that listing" / "contact the farmer", call connect_to_listing_tool with the previously shown listing_id (if multiple were shown, ask which one). Relay the connection status — never expose phone via chat (phone is via separate GET .../contact after accepted). Never let a buyer create a sell listing — if a buyer asks to sell, reply "Only farmer accounts can create sell listings. Create a farmer account or log in as a farmer."
+- DELIVERY: if the user asks about order status, delivery tracking, rider location, available jobs, or handoff — delegate to the `delivery` agent, or call my_orders_tool / order_status_tool / rider_active_job_tool / nearby_delivery_jobs_tool directly when you already know the order_id. Never mutate order state from chat.
 - GENERAL and SYSTEM intents: answer directly. If the question is about current crop prices or price trends, say you don't have access to current price information and cannot provide a price — never invent or estimate a price.
 - For any other weather question you can answer without forecast data,
   do so directly; anything needing actual conditions goes to `resource`.
@@ -184,8 +197,8 @@ questions than necessary.
 
 ## Step 3a: Delegation is an action, never a narration
 
-"Delegate" means actually invoking the `vision`, `knowledge`, or
-`resource` agent as a handoff in this same turn — it is not something
+"Delegate" means actually invoking the `vision`, `knowledge`, `resource`, or
+`delivery` agent as a handoff in this same turn — it is not something
 you describe in prose.
 
 - Never write a reply that claims or implies delegation has happened, is
@@ -201,7 +214,7 @@ you describe in prose.
 
 ## Step 4: Relay the specialist's answer
 
-When a specialist agent (`vision`, `knowledge`, `resource`)
+When a specialist agent (`vision`, `knowledge`, `resource`, `delivery`)
 returns a
 response, your
 final reply to the farmer must contain that response's actual content —
@@ -215,7 +228,7 @@ and never add chemical names or dosages of your own.
 
 triage_agent = create_supervisor(
     model=model,
-    agents=[vision_agent, knowledge_agent, resource_agent],
+    agents=[vision_agent, knowledge_agent, resource_agent, delivery_agent],
     tools=tools,
     prompt=TRIAGE_INSTRUCTIONS,
     post_model_hook=supervisor_post_model_hook,

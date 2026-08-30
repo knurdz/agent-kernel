@@ -20,12 +20,19 @@ import marketplace.models  # noqa: F401
 from marketplace.database import Base, get_db
 from marketplace.routers.auth import router as auth_router
 from marketplace.routers.config import router as config_router
-from marketplace.session_identity import canonical_session_id, parse_canonical_session_id
+from marketplace.session_identity import canonical_session_id, is_user_owned_session, parse_canonical_session_id
 
 
 def test_canonical_session_roundtrip():
     assert parse_canonical_session_id(canonical_session_id(42)) == 42
     assert parse_canonical_session_id("random") is None
+
+
+def test_user_owned_session_ids():
+    assert is_user_owned_session(canonical_session_id(7), 7)
+    assert is_user_owned_session("agri:user:7:t:abc", 7)
+    assert not is_user_owned_session("agri:user:8:t:abc", 7)
+    assert not is_user_owned_session("random", 7)
 
 
 def _memory_app(extra_routers=None, handlers=None):
@@ -114,6 +121,31 @@ def test_chat_requires_jwt():
     client, _ = _memory_app(handlers=[AuthenticatedMobileChatHandler()])
     resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "ignored"})
     assert resp.status_code == 401
+
+
+def test_authenticated_json_chat_parses_body():
+    import demo  # noqa: F401 — registers agents
+
+    from mobile_api.authenticated_chat_handler import AuthenticatedMobileChatHandler
+
+    client, SessionLocal = _memory_app(handlers=[AuthenticatedMobileChatHandler()])
+    token = _signup_farmer(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    with SessionLocal() as db:
+        from marketplace.models import User
+
+        user = db.query(User).filter(User.phone_number == "+94770009901").one()
+        session_id = canonical_session_id(user.id)
+
+    resp = client.post(
+        "/api/v1/chat",
+        headers=headers,
+        json={"prompt": "What treatment do you recommend?", "session_id": session_id, "agent": "triage"},
+    )
+    assert resp.status_code != 422, resp.text
+    detail = resp.json().get("detail")
+    if isinstance(detail, list):
+        assert not any(item.get("type") == "missing" for item in detail if isinstance(item, dict))
 
 
 def test_telegram_link_token_and_unlink():

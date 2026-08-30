@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/shell/main_shell.dart';
@@ -7,6 +8,9 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/domain/models.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../delivery/presentation/buyer_checkout_screen.dart';
+import '../../delivery/presentation/orders_list_screens.dart';
+import '../../delivery/presentation/rider_screens.dart';
 import '../../marketplace/data/marketplace_repository.dart';
 
 class ConnectionsScreen extends ConsumerStatefulWidget {
@@ -34,6 +38,11 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     });
     try {
       final user = ref.read(authControllerProvider).asData?.value;
+      if (user?.isRider == true) {
+        _items = [];
+        ref.invalidate(pendingConnectionsCountProvider);
+        return;
+      }
       final repo = ref.read(marketplaceRepositoryProvider);
       _items = user?.isFarmer == true ? await repo.farmerConnections() : await repo.buyerConnections();
       ref.invalidate(pendingConnectionsCountProvider);
@@ -65,6 +74,15 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     await _load();
   }
 
+  Future<void> _placeOrder(ConnectionItem item) async {
+    final placed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => BuyerCheckoutScreen(connection: item)),
+    );
+    if (placed == true && mounted) {
+      context.push('/orders');
+    }
+  }
+
   String _capitalize(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
@@ -72,12 +90,32 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isFarmer = ref.watch(authControllerProvider).asData?.value?.isFarmer == true;
+    final user = ref.watch(authControllerProvider).asData?.value;
+    if (user?.isRider == true) {
+      return const RiderActiveDeliveryScreen();
+    }
+
+    final isFarmer = user?.isFarmer == true;
+    final isBuyer = user?.isBuyer == true;
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inbox'),
+        actions: [
+          if (isBuyer)
+            IconButton(
+              icon: const Icon(Icons.receipt_long),
+              tooltip: 'My orders',
+              onPressed: () => context.push('/orders'),
+            ),
+          if (isFarmer)
+            IconButton(
+              icon: const Icon(Icons.receipt_long),
+              tooltip: 'Orders',
+              onPressed: () => context.push('/farmer-orders'),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -105,7 +143,8 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                             EmptyState(
                               icon: Icons.handshake_outlined,
                               title: 'No deals yet',
-                              subtitle: 'When buyers connect with your listings, or you reach out to farmers, they will appear here.',
+                              subtitle:
+                                  'When buyers connect with your listings, or you reach out to farmers, they will appear here.',
                             ),
                           ],
                         )
@@ -166,7 +205,12 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                                             onPressed: () => _patchConnection(c, 'accepted'),
                                             child: const Text('Accept'),
                                           ),
-                                        ] else if (c.status == 'accepted' || c.status == 'completed')
+                                        ] else if (isBuyer && c.status == 'accepted')
+                                          FilledButton(
+                                            onPressed: () => _placeOrder(c),
+                                            child: const Text('Place order'),
+                                          )
+                                        else if (c.status == 'accepted' || c.status == 'completed')
                                           FilledButton.tonalIcon(
                                             onPressed: () => _showContact(c),
                                             icon: const Icon(Icons.phone, size: 18),

@@ -6,8 +6,11 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/signup_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/channels/presentation/channels_screen.dart';
+import '../../features/chat/presentation/advisor_threads_screen.dart';
 import '../../features/chat/presentation/chat_screen.dart';
 import '../../features/connections/presentation/connections_screen.dart';
+import '../../features/delivery/presentation/order_tracking_screen.dart';
+import '../../features/delivery/presentation/orders_list_screens.dart';
 import '../../features/plants/presentation/plant_detail_screen.dart';
 import '../../features/plants/presentation/plant_list_screen.dart';
 import '../../features/plants/presentation/quick_scan_screen.dart';
@@ -37,6 +40,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (_, __) => const SignupScreen()),
+      GoRoute(path: '/orders', builder: (_, __) => const BuyerOrdersScreen()),
+      GoRoute(path: '/farmer-orders', builder: (_, __) => const FarmerOrdersScreen()),
+      GoRoute(
+        path: '/orders/:orderId/track',
+        builder: (_, state) => OrderTrackingScreen(orderId: int.parse(state.pathParameters['orderId']!)),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return MainShell(navigationShell: navigationShell);
@@ -68,8 +77,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/chat',
-                builder: (_, state) => ChatScreen(initialPrompt: state.extra as String?),
+                builder: (_, __) => const AdvisorThreadsScreen(),
                 routes: [
+                  GoRoute(
+                    path: 't/:sessionId',
+                    builder: (_, state) => ChatScreen(
+                      sessionId: Uri.decodeComponent(state.pathParameters['sessionId']!),
+                      initialPrompt: state.extra as String?,
+                      threadName: state.uri.queryParameters['name'],
+                    ),
+                  ),
                   GoRoute(
                     path: 'scan',
                     builder: (_, __) => const QuickScanScreen(),

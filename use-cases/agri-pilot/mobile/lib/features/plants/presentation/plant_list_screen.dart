@@ -42,74 +42,12 @@ class _PlantListScreenState extends ConsumerState<PlantListScreen> {
   }
 
   Future<void> _createPlant() async {
-    final crop = TextEditingController();
-    final name = TextEditingController();
-    String? formError;
-
     final created = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 8,
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom + 24,
-          ),
-          child: StatefulBuilder(
-            builder: (context, setSheetState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('New plant', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: crop,
-                    decoration: const InputDecoration(labelText: 'Crop', hintText: 'e.g. tomato'),
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: name,
-                    decoration: const InputDecoration(labelText: 'Label (optional)', hintText: 'Field A tomatoes'),
-                  ),
-                  if (formError != null) ...[
-                    const SizedBox(height: 8),
-                    Text(formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ],
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      final cropVal = crop.text.trim();
-                      if (cropVal.isEmpty) {
-                        setSheetState(() => formError = 'Enter a crop name');
-                        return;
-                      }
-                      try {
-                        await ref.read(plantsRepositoryProvider).createPlant(
-                              crop: cropVal,
-                              name: name.text.trim().isEmpty ? null : name.text.trim(),
-                            );
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } catch (e) {
-                        setSheetState(() => formError = e is ApiException ? e.message : 'Could not create plant');
-                      }
-                    },
-                    child: const Text('Create'),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+      builder: (_) => const _CreatePlantSheet(),
     );
-
-    crop.dispose();
-    name.dispose();
     if (created == true) await _refresh();
   }
 
@@ -235,6 +173,106 @@ class _PlantListScreenState extends ConsumerState<PlantListScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _CreatePlantSheet extends ConsumerStatefulWidget {
+  const _CreatePlantSheet();
+
+  @override
+  ConsumerState<_CreatePlantSheet> createState() => _CreatePlantSheetState();
+}
+
+class _CreatePlantSheetState extends ConsumerState<_CreatePlantSheet> {
+  late final TextEditingController _crop;
+  late final TextEditingController _name;
+  String? _formError;
+  var _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _crop = TextEditingController();
+    _name = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _crop.dispose();
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismissSheet({required bool success}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    if (mounted) Navigator.pop(context, success);
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    final cropVal = _crop.text.trim();
+    if (cropVal.isEmpty) {
+      setState(() => _formError = 'Enter a crop name');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _formError = null;
+    });
+    try {
+      await ref.read(plantsRepositoryProvider).createPlant(
+            crop: cropVal,
+            name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+          );
+      await _dismissSheet(success: true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _formError = e is ApiException ? e.message : 'Could not create plant';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 8,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('New plant', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _crop,
+            decoration: const InputDecoration(labelText: 'Crop', hintText: 'e.g. tomato'),
+            textCapitalization: TextCapitalization.words,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Label (optional)', hintText: 'Field A tomatoes'),
+          ),
+          if (_formError != null) ...[
+            const SizedBox(height: 8),
+            Text(_formError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _submitting ? null : _submit,
+            child: const Text('Create'),
+          ),
+        ],
+      ),
     );
   }
 }

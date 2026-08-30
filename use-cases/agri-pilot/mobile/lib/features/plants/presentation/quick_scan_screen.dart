@@ -9,6 +9,8 @@ import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/domain/models.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../chat/data/chat_repository.dart';
 import '../data/plants_repository.dart';
 
 class QuickScanScreen extends ConsumerStatefulWidget {
@@ -116,12 +118,15 @@ class _QuickScanScreenState extends ConsumerState<QuickScanScreen> {
   }
 
   void _askAdvisor() {
+    final user = ref.read(authControllerProvider).value;
+    if (user == null) return;
     final result = _result;
     if (result == null) return;
     final summary = result.confident && result.topLabel != null
         ? 'My crop scan shows ${result.topLabel} (${((result.topConfidence ?? 0) * 100).toStringAsFixed(0)}% confidence). What should I do?'
         : 'I scanned my crop but the diagnosis was unclear. Can you help?';
-    context.go('/chat', extra: summary);
+    final sessionId = newThreadSessionId(user.id);
+    context.go('/chat/t/${Uri.encodeComponent(sessionId)}', extra: summary);
   }
 
   @override

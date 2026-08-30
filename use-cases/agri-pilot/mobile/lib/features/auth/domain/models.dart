@@ -5,6 +5,11 @@ class UserProfile {
     this.preferredLanguage,
     this.businessName,
     this.contactPhone,
+    this.addressLabel,
+    this.latitude,
+    this.longitude,
+    this.hasVehicle,
+    this.isOnline,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
@@ -13,6 +18,11 @@ class UserProfile {
         preferredLanguage: json['preferred_language'] as String?,
         businessName: json['business_name'] as String?,
         contactPhone: json['contact_phone'] as String?,
+        addressLabel: json['address_label'] as String?,
+        latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
+        longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
+        hasVehicle: json['has_vehicle'] as bool?,
+        isOnline: json['is_online'] as bool?,
       );
 
   final String? location;
@@ -20,6 +30,11 @@ class UserProfile {
   final String? preferredLanguage;
   final String? businessName;
   final String? contactPhone;
+  final String? addressLabel;
+  final double? latitude;
+  final double? longitude;
+  final bool? hasVehicle;
+  final bool? isOnline;
 }
 
 class UserMe {
@@ -53,6 +68,7 @@ class UserMe {
 
   bool get isFarmer => role == 'farmer';
   bool get isBuyer => role == 'buyer';
+  bool get isRider => role == 'rider';
   bool get isActiveFarmer => isFarmer && subscriptionStatus == 'active';
 }
 
@@ -120,6 +136,26 @@ class ChatMessage {
   final String role;
   final String content;
   final DateTime createdAt;
+}
+
+class ThreadSummary {
+  ThreadSummary({
+    required this.sessionId,
+    required this.name,
+    required this.updatedAt,
+  });
+
+  factory ThreadSummary.fromJson(Map<String, dynamic> json) => ThreadSummary(
+        sessionId: json['session_id'] as String,
+        name: (json['name'] as String?)?.trim().isNotEmpty == true ? json['name'] as String : 'Conversation',
+        updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+            DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
+      );
+
+  final String sessionId;
+  final String name;
+  final DateTime updatedAt;
 }
 
 class ChannelsStatus {
@@ -384,4 +420,139 @@ class ListingInsights {
   final double? latestConfidence;
   final List<Map<String, dynamic>> timeline;
   final String trend;
+}
+
+class OrderItem {
+  OrderItem({
+    required this.id,
+    required this.connectionId,
+    required this.listingId,
+    required this.crop,
+    required this.quantityKg,
+    required this.fulfillmentMode,
+    required this.status,
+    this.pricePerKg,
+    this.deliveryId,
+    this.deliveryStatus,
+    this.pickupAddressLabel,
+    this.deliveryAddressLabel,
+  });
+
+  factory OrderItem.fromJson(Map<String, dynamic> json) => OrderItem(
+        id: json['id'] as int,
+        connectionId: json['connection_id'] as int,
+        listingId: json['listing_id'] as int,
+        crop: json['crop'] as String,
+        quantityKg: (json['quantity_kg'] as num).toDouble(),
+        fulfillmentMode: json['fulfillment_mode'] as String,
+        status: json['status'] as String,
+        pricePerKg: json['price_per_kg'] != null ? (json['price_per_kg'] as num).toDouble() : null,
+        deliveryId: json['delivery_id'] as int?,
+        deliveryStatus: json['delivery_status'] as String?,
+        pickupAddressLabel: json['pickup_address_label'] as String?,
+        deliveryAddressLabel: json['delivery_address_label'] as String?,
+      );
+
+  final int id;
+  final int connectionId;
+  final int listingId;
+  final String crop;
+  final double quantityKg;
+  final String fulfillmentMode;
+  final String status;
+  final double? pricePerKg;
+  final int? deliveryId;
+  final String? deliveryStatus;
+  final String? pickupAddressLabel;
+  final String? deliveryAddressLabel;
+}
+
+class OrderCreateResult {
+  OrderCreateResult({required this.order, required this.handoffPin});
+
+  factory OrderCreateResult.fromJson(Map<String, dynamic> json) => OrderCreateResult(
+        order: OrderItem.fromJson(json['order'] as Map<String, dynamic>),
+        handoffPin: json['handoff_pin'] as String,
+      );
+
+  final OrderItem order;
+  final String handoffPin;
+}
+
+class OrderTracking {
+  OrderTracking({
+    required this.orderId,
+    required this.status,
+    required this.fulfillmentMode,
+    required this.quantityKg,
+    required this.crop,
+    required this.pickup,
+    required this.delivery,
+    required this.rider,
+    this.deliveryStatus,
+    required this.events,
+  });
+
+  factory OrderTracking.fromJson(Map<String, dynamic> json) => OrderTracking(
+        orderId: json['order_id'] as int,
+        status: json['status'] as String,
+        fulfillmentMode: json['fulfillment_mode'] as String,
+        quantityKg: (json['quantity_kg'] as num).toDouble(),
+        crop: json['crop'] as String,
+        pickup: json['pickup'] as Map<String, dynamic>,
+        delivery: json['delivery'] as Map<String, dynamic>,
+        rider: json['rider'] as Map<String, dynamic>,
+        deliveryStatus: json['delivery_status'] as String?,
+        events: (json['events'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
+      );
+
+  final int orderId;
+  final String status;
+  final String fulfillmentMode;
+  final double quantityKg;
+  final String crop;
+  final Map<String, dynamic> pickup;
+  final Map<String, dynamic> delivery;
+  final Map<String, dynamic> rider;
+  final String? deliveryStatus;
+  final List<Map<String, dynamic>> events;
+}
+
+class RiderJob {
+  RiderJob({
+    required this.orderId,
+    required this.deliveryId,
+    required this.crop,
+    required this.quantityKg,
+    required this.pickupDistrictArea,
+    required this.deliveryDistrictArea,
+    required this.distanceToPickupKm,
+    required this.routeDistanceM,
+    required this.routeDurationS,
+    required this.mapsAvailable,
+  });
+
+  factory RiderJob.fromJson(Map<String, dynamic> json) => RiderJob(
+        orderId: json['order_id'] as int,
+        deliveryId: json['delivery_id'] as int,
+        crop: json['crop'] as String,
+        quantityKg: (json['quantity_kg'] as num).toDouble(),
+        pickupDistrictArea: json['pickup_district_area'] as String,
+        deliveryDistrictArea: json['delivery_district_area'] as String,
+        distanceToPickupKm: (json['distance_to_pickup_km'] as num).toDouble(),
+        routeDistanceM: json['route_distance_m'] as int,
+        routeDurationS: json['route_duration_s'] as int,
+        mapsAvailable: json['maps_available'] as bool? ?? false,
+      );
+
+  final int orderId;
+  final int deliveryId;
+  final String crop;
+  final double quantityKg;
+  final String pickupDistrictArea;
+  final String deliveryDistrictArea;
+  final double distanceToPickupKm;
+  final int routeDistanceM;
+  final int routeDurationS;
+  final bool mapsAvailable;
 }

@@ -6,7 +6,7 @@ Agentic AI agricultural assistant for smallholder farmers, built on [Agent Kerne
 
 ## Architecture
 
-Supervisor `agents/supervisor.py:27` routes each message to three specialists: `vision_agent` (crop-disease diagnosis), `knowledge_agent` (agricultural RAG over ChromaDB `data/chroma_db/`), `resource_agent` (weather + irrigation via `tools/weather_tool.py:1` Open-Meteo). Price/selling questions get honest "no market prices" reply — market specialist removed 2026-08-24 (no reliable API).
+Supervisor `agents/supervisor.py:27` routes each message to four specialists: `vision_agent` (crop-disease diagnosis), `knowledge_agent` (agricultural RAG over ChromaDB `data/chroma_db/`), `resource_agent` (weather + irrigation via `tools/weather_tool.py:1` Open-Meteo), and `delivery_agent` (read-only order/dispatch status via `tools/delivery_tools.py`). Price/selling questions get honest "no market prices" reply — market specialist removed 2026-08-24 (no reliable API).
 
 Two code-level backstops wrap LLM prompts: `agents/supervisor_guardrails.py:47` (handoff-loop + narrated-action LLM judge, `AGRIPILOT_JUDGE_PROVIDER`) and `agents/knowledge_guardrails.py` (no chemical/dosage without `allow` from `tools/safety_tool.py:1` `validate_treatment` vs `data/safety_rules.json`). Data-fetching tools are wrapped by `tools/tool_guard.py:100` (`@guarded`, per-session `AGRIPILOT_TOOL_MAX_CALLS=8`, `AGRIPILOT_TOOL_TIMEOUT_SECONDS=180`, `contextvars.copy_context`).
 
@@ -15,6 +15,8 @@ Marketplace adds `marketplace/` (DB, auth, service, `notifications.py`, `routers
 Durable memory: sessions and multimodal attachments are Redis-backed under Docker (`AK_SESSION__*` / `AK_MULTIMODAL__*` overrides on the compose `redis` service), so conversations survive container restarts — over WhatsApp the sender's phone number *is* the session id. `state/farmer_profile.py` + `tools/profile_tools.py` keep a per-session case history (crop, disease, severity, advice, date, follow-up status); vision records diagnoses, knowledge records validated advice, and triage Step 2b resolves "it"/"getting worse" against the stored profile instead of re-asking.
 
 **Plant tracking & crop scans:** farmers can run a **one-time crop scan** (`POST /api/farmer/scans`) or maintain a **plant list** with a photo timeline (`/api/farmer/plants*`). Image analysis reuses the existing HuggingFace ViT pipeline in `tools/vision_tool.py` (`check_image_quality` + `diagnose_crop_image` via `analyze_crop_photo`) — no separate vision API. Observation photos persist on disk under `data/plant_media/` (Docker volume `plant-media`; override with `AGRIPILOT_PLANT_MEDIA_ROOT`). A sell listing can be linked 1:1 to a tracked plant (`POST /api/farmer/listings/{id}/import-plant`); buyers then see **crop-health insights** on that listing (`GET /api/buyer/listings/{id}/insights`) — observation counts, diagnosis timeline, and trend — without raw photos or chemical advice. Chat diagnosis (supervisor → vision → knowledge) remains unchanged for conversational advice.
+
+**Rider delivery MVP:** a third **rider** account (self-registered with vehicle confirmation) can accept nearby delivery jobs after farmers mark orders ready. Buyers choose **pickup** or **delivery** on accepted connections; farmers confirm quantity and pickup pin; delivery orders enter rider search by weight + distance (no vehicle-type tiers). State changes are **deterministic REST** (`marketplace/order_service.py`, `marketplace/dispatch_service.py`); the agent only explains status via read-only `delivery_tools`. Maps use **OpenStreetMap** tiles in the mobile app (`flutter_map`, no API key) and optional **OSRM** road routing on the server (`marketplace/maps_service.py`, falls back to Haversine). Live tracking uses rider GPS posts + buyer/farmer polling; FCM notifies milestones. Payment stays cash/off-platform.
 
 ## Prerequisites
 
@@ -60,6 +62,15 @@ New API surfaces (mobile):
 | `GET` | `/api/farmer/plants/{id}/observations/{obs_id}/photo` | JWT farmer+active |
 | `POST` | `/api/farmer/listings/{id}/import-plant` | JWT farmer+active |
 | `GET` | `/api/buyer/listings/{id}/insights` | JWT buyer |
+| `POST` | `/api/buyer/orders` | JWT buyer |
+| `GET` | `/api/buyer/orders` | JWT buyer |
+| `GET` | `/api/buyer/orders/{id}/tracking` | JWT buyer |
+| `POST` | `/api/farmer/orders/{id}/confirm` | JWT farmer+active |
+| `POST` | `/api/farmer/orders/{id}/ready` | JWT farmer+active |
+| `GET/POST` | `/api/rider/jobs`, `/api/rider/online`, `/api/rider/location` | JWT rider |
+| `POST` | `/api/rider/jobs/{order_id}/accept` | JWT rider |
+
+Mobile rider setup: `flutter run --dart-define=API_BASE_URL=...` — no map API keys required. Signup role **Rider** requires the vehicle checkbox.
 
 `demo.py:5` calls `load_dotenv(".env.local")` **before** importing `agentkernel` — keep that order in new entrypoints. `AK_` env vars override `config.yaml` with `__` nesting (e.g. `AK_GUARDRAIL__INPUT__ENABLED=false`, `AK_MARKETPLACE__SKIP_SUBSCRIPTION_CHECK=1` dev bypass).
 

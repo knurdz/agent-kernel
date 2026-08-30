@@ -14,6 +14,7 @@ class AuthRepository {
     required String password,
     required String name,
     String? district,
+    bool? hasVehicle,
   }) async {
     try {
       await _dio.post('/api/auth/signup', data: {
@@ -22,6 +23,7 @@ class AuthRepository {
         'password': password,
         'name': name,
         if (district != null) 'district': district,
+        if (hasVehicle != null) 'has_vehicle': hasVehicle,
       });
     } on DioException catch (e) {
       throw ApiException.fromDio(e);

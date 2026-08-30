@@ -17,6 +17,20 @@ def canonical_session_id(user_id: int) -> str:
     return f"{CANONICAL_PREFIX}{user_id}"
 
 
+def user_session_prefix(user_id: int) -> str:
+    """Prefix for any session owned by a marketplace user (canonical or mobile thread)."""
+    return f"{CANONICAL_PREFIX}{user_id}"
+
+
+def is_user_owned_session(session_id: str | None, user_id: int) -> bool:
+    """True when session_id belongs to the user (main channel thread or mobile sub-thread)."""
+    if not session_id:
+        return False
+    sid = str(session_id)
+    prefix = user_session_prefix(user_id)
+    return sid == prefix or sid.startswith(f"{prefix}:")
+
+
 def parse_canonical_session_id(session_id: str | None) -> Optional[int]:
     if not session_id or not str(session_id).startswith(CANONICAL_PREFIX):
         return None

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from agentkernel.auth.authoriser import Authoriser
+from agentkernel.core.model import BaseRunRequest
 from agentkernel.integration.thread import AgentThreadRequestHandler
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,7 +15,7 @@ from marketplace.auth import decode_token
 from marketplace.database import get_db
 from marketplace.jwt_authoriser import MarketplaceJwtAuthoriser
 from marketplace.models import User
-from marketplace.session_identity import canonical_session_id
+from marketplace.session_identity import canonical_session_id, is_user_owned_session
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -47,8 +48,12 @@ class AuthenticatedMobileChatHandler(AgentThreadRequestHandler):
 
     @staticmethod
     def _bind_request_to_user(req, user: User) -> None:
-        req.session_id = canonical_session_id(user.id)
         req.user_id = str(user.id)
+        sid = (getattr(req, "session_id", None) or "").strip()
+        if is_user_owned_session(sid, user.id):
+            req.session_id = sid
+        else:
+            req.session_id = canonical_session_id(user.id)
 
     def get_router(self) -> APIRouter:
         router = APIRouter()
@@ -68,7 +73,7 @@ class AuthenticatedMobileChatHandler(AgentThreadRequestHandler):
 
     async def _run_authenticated(
         self,
-        body,
+        body: BaseRunRequest,
         credentials: HTTPAuthorizationCredentials = Depends(_bearer),
         db: Session = Depends(get_db),
     ):

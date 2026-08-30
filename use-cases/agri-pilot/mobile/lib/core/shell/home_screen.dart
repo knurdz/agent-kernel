@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/providers/auth_provider.dart';
+import '../../features/delivery/presentation/rider_screens.dart';
 import '../../features/marketplace/presentation/buyer_home_screen.dart';
 import '../../features/marketplace/presentation/farmer_home_screen.dart';
 
@@ -15,6 +16,8 @@ class HomeScreen extends ConsumerWidget {
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return user.isFarmer ? const FarmerHomeScreen() : const BuyerHomeScreen();
+    if (user.isRider) return const RiderJobsScreen();
+    if (user.isFarmer) return const FarmerHomeScreen();
+    return const BuyerHomeScreen();
   }
 }

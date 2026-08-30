@@ -145,3 +145,28 @@ def notify_buyer_connection_update(buyer_id: int, connection_id: int, status: st
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("notify_buyer_connection_update failed: %s", exc, exc_info=False)
+
+
+def notify_delivery_update(user_id: int, order_id: int, status: str, body: str) -> None:
+    """Notify participant of order/delivery milestone."""
+    try:
+        from marketplace.database import SessionLocal
+        from marketplace.models import NotificationPreference
+
+        db = SessionLocal()
+        try:
+            prefs = db.get(NotificationPreference, user_id)
+            if prefs is not None and not prefs.delivery_updates:
+                return
+            if prefs is not None and not prefs.push_enabled:
+                return
+        finally:
+            db.close()
+        _send_fcm(
+            user_id,
+            "Delivery update",
+            body,
+            {"type": "delivery_update", "order_id": str(order_id), "status": status},
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("notify_delivery_update failed: %s", exc, exc_info=False)

@@ -12,7 +12,7 @@ from marketplace.channels import (
     unlink_telegram,
 )
 from marketplace.database import get_db
-from marketplace.models import BuyerProfile, FarmerProfile, User
+from marketplace.models import BuyerProfile, FarmerProfile, RiderProfile, User
 from marketplace.schemas import (
     ChannelsResponse,
     LoginRequest,
@@ -39,9 +39,15 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     if payload.role == "admin":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="use seed script for admin")
 
+    if payload.role == "rider" and not payload.has_vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="riders must confirm vehicle access (has_vehicle=true)",
+        )
+
     pwd_hash = hash_password(payload.password)
 
-    # Farmer defaults to active, buyer to none (no subscription for buyers — Phases 16/17).
+    # Farmer defaults to active, buyer/rider to none (no subscription for buyers/riders).
     # Contact phone only for farmers (optional, fallback to primary phone for buyer display).
     sub_status = "active" if payload.role == "farmer" else "none"
     contact_phone_norm = None
@@ -70,7 +76,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
                 contact_phone=contact_phone_norm,
             )
         )
-    else:
+    elif payload.role == "buyer":
         db.add(
             BuyerProfile(
                 user_id=user.id,
@@ -79,6 +85,8 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
                 district=payload.district,
             )
         )
+    elif payload.role == "rider":
+        db.add(RiderProfile(user_id=user.id, has_vehicle=bool(payload.has_vehicle), is_online=False))
     db.commit()
     db.refresh(user)
     return {
@@ -110,10 +118,29 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
             district=p.district,
             preferred_language=p.preferred_language,
             contact_phone=p.contact_phone,
+            address_label=p.address_label,
+            latitude=p.latitude,
+            longitude=p.longitude,
         )
     elif user.role == "buyer" and user.buyer_profile:
         p = user.buyer_profile
-        profile = ProfileOut(business_name=p.business_name, location=p.location, district=p.district)
+        profile = ProfileOut(
+            business_name=p.business_name,
+            location=p.location,
+            district=p.district,
+            address_label=p.address_label,
+            latitude=p.latitude,
+            longitude=p.longitude,
+        )
+    elif user.role == "rider" and user.rider_profile:
+        p = user.rider_profile
+        profile = ProfileOut(
+            has_vehicle=p.has_vehicle,
+            is_online=p.is_online,
+            address_label=p.address_label,
+            latitude=p.latitude,
+            longitude=p.longitude,
+        )
     return MeResponse(
         id=user.id,
         phone_number=user.phone_number,
@@ -146,6 +173,12 @@ def update_me(
             fp.preferred_language = payload.preferred_language
         if payload.contact_phone_number is not None:
             fp.contact_phone = normalize_phone(payload.contact_phone_number) if payload.contact_phone_number else None
+        if payload.address_label is not None:
+            fp.address_label = payload.address_label
+        if payload.latitude is not None:
+            fp.latitude = payload.latitude
+        if payload.longitude is not None:
+            fp.longitude = payload.longitude
     elif user.role == "buyer":
         if user.buyer_profile is None:
             db.add(BuyerProfile(user_id=user.id))
@@ -157,6 +190,25 @@ def update_me(
             bp.location = payload.location
         if payload.district is not None:
             bp.district = payload.district
+        if payload.address_label is not None:
+            bp.address_label = payload.address_label
+        if payload.latitude is not None:
+            bp.latitude = payload.latitude
+        if payload.longitude is not None:
+            bp.longitude = payload.longitude
+    elif user.role == "rider":
+        if user.rider_profile is None:
+            db.add(RiderProfile(user_id=user.id))
+            db.flush()
+        rp = user.rider_profile
+        if payload.has_vehicle is not None:
+            rp.has_vehicle = payload.has_vehicle
+        if payload.address_label is not None:
+            rp.address_label = payload.address_label
+        if payload.latitude is not None:
+            rp.latitude = payload.latitude
+        if payload.longitude is not None:
+            rp.longitude = payload.longitude
     db.commit()
     db.refresh(user)
     return me(user=user, db=db)

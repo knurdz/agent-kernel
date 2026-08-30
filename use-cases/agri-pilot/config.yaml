@@ -83,3 +83,10 @@ channels:
 notifications:
   fcm_enabled: false
   firebase_credentials_path: ""
+
+delivery:
+  dispatch_radius_km: 25
+  # Optional override for public OSRM routing (default: https://router.project-osrm.org)
+  osrm_base_url: "https://router.project-osrm.org"
+  location_stale_seconds: 120
+  min_location_interval_seconds: 5

@@ -30,7 +30,7 @@ void main() {
     );
 
     expect(
-      repo.sendText('hello'),
+      repo.sendText('hello', sessionId: 'agri:user:1:t:abc'),
       throwsA(isA<ApiException>()),
     );
   });
@@ -43,6 +43,28 @@ void main() {
       ),
     );
 
-    await expectLater(repo.sendText('blight?'), completion('Try neem oil spray.'));
+    await expectLater(
+      repo.sendText('blight?', sessionId: 'agri:user:1:t:abc'),
+      completion('Try neem oil spray.'),
+    );
+  });
+
+  test('sendText accepts fallback prompt for image-only style requests', () async {
+    when(() => dio.post(any(), data: any(named: 'data'))).thenAnswer(
+      (_) async => Response(
+        requestOptions: RequestOptions(path: '/api/v1/chat'),
+        data: {'result': 'Looks like blight.'},
+      ),
+    );
+
+    await expectLater(
+      repo.sendText('Diagnose this crop', sessionId: 'agri:user:1:t:abc'),
+      completion('Looks like blight.'),
+    );
+  });
+
+  test('newThreadSessionId is user-owned', () {
+    final sessionId = newThreadSessionId(42);
+    expect(sessionId.startsWith('agri:user:42:t:'), isTrue);
   });
 }

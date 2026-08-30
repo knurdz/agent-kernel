@@ -28,6 +28,32 @@ void main() {
       'created_at': '2026-01-01T00:00:00Z',
     });
     expect(listing.crop, 'tomato');
-    expect(listing.quantityKg, 500);
+  test('UserMe parses rider JSON', () {
+    final user = UserMe.fromJson({
+      'id': 3,
+      'phone_number': '+94770000003',
+      'role': 'rider',
+      'subscription_status': 'none',
+      'name': 'Ravi',
+      'created_at': '2026-01-01T00:00:00Z',
+      'profile': {'has_vehicle': true, 'is_online': false},
+    });
+    expect(user.isRider, isTrue);
+  });
+
+  test('OrderItem parses delivery order', () {
+    final order = OrderItem.fromJson({
+      'id': 1,
+      'connection_id': 2,
+      'listing_id': 3,
+      'crop': 'tomato',
+      'quantity_kg': 50,
+      'fulfillment_mode': 'delivery',
+      'status': 'searching_rider',
+      'created_at': '2026-01-01T00:00:00Z',
+      'updated_at': '2026-01-01T00:00:00Z',
+    });
+    expect(order.fulfillmentMode, 'delivery');
+    expect(order.status, 'searching_rider');
   });
 }

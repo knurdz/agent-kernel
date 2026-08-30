@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/analysing_status.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/start_tracking_crop_banner.dart';
+import '../../plants/data/plants_repository.dart';
 import '../data/chat_repository.dart';
 import 'widgets/chat_bubble.dart';
 
@@ -20,9 +22,16 @@ class _ChatBubble {
 }
 
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, this.initialPrompt});
+  const ChatScreen({
+    super.key,
+    required this.sessionId,
+    this.initialPrompt,
+    this.threadName,
+  });
 
+  final String sessionId;
   final String? initialPrompt;
+  final String? threadName;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -35,6 +44,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   var _loading = false;
   var _loadingWithPhoto = false;
   var _initialized = false;
+  var _showTrackingBanner = false;
+  var _sentFirstMessage = false;
+  File? _pendingImage;
 
   static const _promptChips = [
     "What's wrong with my tomato leaves?",
@@ -46,6 +58,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    _loadTrackingBanner();
     final prompt = widget.initialPrompt;
     if (prompt != null && prompt.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _send(presetText: prompt));
@@ -59,10 +72,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
+  Future<void> _loadTrackingBanner() async {
+    try {
+      final plants = await ref.read(plantsRepositoryProvider).listPlants();
+      if (mounted) setState(() => _showTrackingBanner = plants.isEmpty);
+    } catch (_) {
+      // Banner is optional; ignore load failures.
+    }
+  }
+
   Future<void> _loadHistory() async {
     try {
       final repo = ref.read(chatRepositoryProvider);
-      final history = await repo.history();
+      final history = await repo.getMessages(widget.sessionId);
       setState(() {
         _messages.addAll(history.map((m) => _ChatBubble(role: m.role, text: m.content)));
         _initialized = true;
@@ -94,20 +116,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return text;
   }
 
+  String? _threadNameForFirstMessage(String text) {
+    if (_sentFirstMessage) return null;
+    final preset = widget.threadName?.trim();
+    if (preset != null && preset.isNotEmpty) return preset;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return 'Crop photo';
+    return trimmed.length > 48 ? '${trimmed.substring(0, 48)}…' : trimmed;
+  }
+
   Future<void> _send({File? image, String? presetText}) async {
+    final pending = image ?? _pendingImage;
     final text = presetText ?? _controller.text.trim();
-    if (text.isEmpty && image == null) return;
+    if (text.isEmpty && pending == null) return;
     final prompt = text.isEmpty ? 'Diagnose this crop' : text;
+    final threadName = _threadNameForFirstMessage(prompt);
     setState(() {
       _loading = true;
-      _loadingWithPhoto = image != null;
-      _messages.add(_ChatBubble(role: 'user', text: _userBubbleText(prompt, image), image: image));
+      _loadingWithPhoto = pending != null;
+      _pendingImage = null;
+      _messages.add(_ChatBubble(role: 'user', text: _userBubbleText(prompt, pending), image: pending));
     });
     if (presetText == null) _controller.clear();
     _scrollToBottom();
     try {
       final repo = ref.read(chatRepositoryProvider);
-      final reply = image != null ? await repo.sendPhoto(prompt, image) : await repo.sendText(text);
+      final reply = pending != null
+          ? await repo.sendPhoto(
+              prompt,
+              pending,
+              sessionId: widget.sessionId,
+              threadName: threadName,
+            )
+          : await repo.sendText(
+              prompt,
+              sessionId: widget.sessionId,
+              threadName: threadName,
+            );
+      if (mounted) setState(() => _sentFirstMessage = true);
       setState(() => _messages.add(_ChatBubble(role: 'assistant', text: reply)));
     } catch (e) {
       setState(() => _messages.add(_ChatBubble(
@@ -128,8 +174,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _pickPhoto(ImageSource source) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source, maxWidth: 1920, imageQuality: 85);
-    if (file != null) await _send(image: File(file.path));
+    if (file != null) setState(() => _pendingImage = File(file.path));
   }
+
+  void _clearPendingImage() {
+    setState(() => _pendingImage = null);
+  }
+
+  bool get _canSend => !_loading && (_controller.text.trim().isNotEmpty || _pendingImage != null);
 
   void _showAttachOptions() {
     showModalBottomSheet<void>(
@@ -176,10 +228,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AgriPilot Advisor'),
+        title: Text(widget.threadName ?? 'Conversation'),
       ),
       body: Column(
         children: [
+          if (_showTrackingBanner) const StartTrackingCropBanner(),
           Expanded(
             child: !_initialized
                 ? const Center(child: CircularProgressIndicator())
@@ -264,6 +317,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
           ],
+          if (_pendingImage != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        _pendingImage!,
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: IconButton.filledTonal(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        iconSize: 16,
+                        onPressed: _loading ? null : _clearPendingImage,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -280,8 +366,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       controller: _controller,
                       maxLines: 4,
                       minLines: 1,
+                      onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
-                        hintText: 'Ask about crops, weather...',
+                        hintText: _pendingImage != null
+                            ? 'Add a message (optional)…'
+                            : 'Ask about crops, weather...',
                         filled: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         border: OutlineInputBorder(
@@ -290,12 +379,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ),
                       ),
                       textInputAction: TextInputAction.send,
-                      onSubmitted: _loading ? null : (_) => _send(),
+                      onSubmitted: _canSend ? (_) => _send() : null,
                     ),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _loading ? null : () => _send(),
+                    onPressed: _canSend ? () => _send() : null,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(48, 48),
                       padding: EdgeInsets.zero,
