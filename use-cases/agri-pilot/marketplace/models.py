@@ -146,7 +146,6 @@ class Listing(Base):
     )
 
     farmer: Mapped[User] = relationship("User", back_populates="listings")
-    plant: Mapped[Plant | None] = relationship("Plant", back_populates="listing", foreign_keys=[plant_id])
 
 
 class Plant(Base):
@@ -170,9 +169,6 @@ class Plant(Base):
     )
 
     farmer: Mapped[User] = relationship("User", back_populates="plants")
-    listing: Mapped[Listing | None] = relationship(
-        "Listing", back_populates="plant", foreign_keys=[listing_id], uselist=False
-    )
     observations: Mapped[list[PlantObservation]] = relationship(
         "PlantObservation", back_populates="plant", cascade="all, delete-orphan", order_by="PlantObservation.captured_at"
     )
