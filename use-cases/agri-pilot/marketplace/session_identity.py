@@ -32,11 +32,15 @@ def is_user_owned_session(session_id: str | None, user_id: int) -> bool:
 
 
 def parse_canonical_session_id(session_id: str | None) -> Optional[int]:
+    """Extract marketplace user id from canonical or mobile thread session keys."""
     if not session_id or not str(session_id).startswith(CANONICAL_PREFIX):
         return None
-    suffix = str(session_id)[len(CANONICAL_PREFIX) :]
+    remainder = str(session_id)[len(CANONICAL_PREFIX) :]
+    if not remainder:
+        return None
+    user_part = remainder.split(":", 1)[0]
     try:
-        return int(suffix)
+        return int(user_part)
     except ValueError:
         return None
 

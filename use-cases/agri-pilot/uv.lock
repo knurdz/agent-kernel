@@ -75,6 +75,9 @@ test = [
     { name = "ragas" },
     { name = "rapidfuzz" },
 ]
+thread = [
+    { name = "litellm" },
+]
 whatsapp = [
     { name = "httpx" },
 ]
@@ -84,7 +87,7 @@ name = "agri-pilot"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["api", "chromadb", "langgraph", "multimodal", "openai", "redis", "telegram", "whatsapp"] },
+    { name = "agentkernel", extra = ["api", "chromadb", "langgraph", "multimodal", "openai", "redis", "telegram", "thread", "whatsapp"] },
     { name = "alembic" },
     { name = "bcrypt" },
     { name = "email-validator" },
@@ -118,7 +121,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "langgraph", "multimodal", "chromadb", "openai", "api", "whatsapp", "telegram", "redis"], specifier = ">=0.8.1" },
+    { name = "agentkernel", extras = ["cli", "langgraph", "multimodal", "chromadb", "openai", "api", "whatsapp", "telegram", "redis", "thread"], specifier = ">=0.8.1" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "bcrypt", specifier = "==4.0.1" },
     { name = "email-validator", specifier = ">=2.0" },

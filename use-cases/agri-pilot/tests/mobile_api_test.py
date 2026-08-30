@@ -25,6 +25,8 @@ from marketplace.session_identity import canonical_session_id, is_user_owned_ses
 
 def test_canonical_session_roundtrip():
     assert parse_canonical_session_id(canonical_session_id(42)) == 42
+    assert parse_canonical_session_id("agri:user:7:t:abc") == 7
+    assert parse_canonical_session_id("agri:user:x") is None
     assert parse_canonical_session_id("random") is None
 
 
