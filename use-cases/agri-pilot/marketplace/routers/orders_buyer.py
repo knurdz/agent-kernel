@@ -43,6 +43,7 @@ def post_order(payload: OrderCreate, db: Session = Depends(get_db), buyer: User 
             db,
             buyer=buyer,
             connection_id=payload.connection_id,
+            listing_id=payload.listing_id,
             quantity_kg=payload.quantity_kg,
             fulfillment_mode=payload.fulfillment_mode,
             delivery_address_label=payload.delivery_address_label,

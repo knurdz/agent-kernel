@@ -85,6 +85,7 @@ notifications:
   firebase_credentials_path: ""
 
 delivery:
+  # Legacy setting; job listing is nationwide (no radius filter). Kept for tooling/docs.
   dispatch_radius_km: 25
   # Optional override for public OSRM routing (default: https://router.project-osrm.org)
   osrm_base_url: "https://router.project-osrm.org"

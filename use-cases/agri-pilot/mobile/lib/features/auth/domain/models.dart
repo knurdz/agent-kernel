@@ -206,6 +206,27 @@ class ListingAnalytics {
       connectionsPending + connectionsAccepted + connectionsDeclined + connectionsCompleted;
 }
 
+class BuyerPublic {
+  BuyerPublic({
+    required this.id,
+    required this.name,
+    this.district,
+    this.businessName,
+  });
+
+  factory BuyerPublic.fromJson(Map<String, dynamic> json) => BuyerPublic(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        district: json['district'] as String?,
+        businessName: json['business_name'] as String?,
+      );
+
+  final int id;
+  final String name;
+  final String? district;
+  final String? businessName;
+}
+
 class ConnectionItem {
   ConnectionItem({
     required this.id,
@@ -213,6 +234,7 @@ class ConnectionItem {
     required this.status,
     required this.listing,
     this.message,
+    this.buyer,
   });
 
   factory ConnectionItem.fromJson(Map<String, dynamic> json) => ConnectionItem(
@@ -221,6 +243,7 @@ class ConnectionItem {
         status: json['status'] as String,
         message: json['message'] as String?,
         listing: Listing.fromJson(json['listing'] as Map<String, dynamic>),
+        buyer: json['buyer'] != null ? BuyerPublic.fromJson(json['buyer'] as Map<String, dynamic>) : null,
       );
 
   final int id;
@@ -228,6 +251,7 @@ class ConnectionItem {
   final String status;
   final String? message;
   final Listing listing;
+  final BuyerPublic? buyer;
 }
 
 class ChatMessage {

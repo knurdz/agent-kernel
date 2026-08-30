@@ -10,7 +10,8 @@ class DeliveryRepository {
 
   // Buyer
   Future<OrderCreateResult> createOrder({
-    required int connectionId,
+    int? connectionId,
+    int? listingId,
     required double quantityKg,
     required String fulfillmentMode,
     String? deliveryAddressLabel,
@@ -18,7 +19,8 @@ class DeliveryRepository {
     double? deliveryLongitude,
   }) async {
     final resp = await _dio.post('/api/buyer/orders', data: {
-      'connection_id': connectionId,
+      if (connectionId != null) 'connection_id': connectionId,
+      if (listingId != null) 'listing_id': listingId,
       'quantity_kg': quantityKg,
       'fulfillment_mode': fulfillmentMode,
       if (deliveryAddressLabel != null) 'delivery_address_label': deliveryAddressLabel,

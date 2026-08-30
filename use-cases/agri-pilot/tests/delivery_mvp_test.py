@@ -107,23 +107,50 @@ def test_rider_signup_requires_vehicle():
     assert r.status_code == 422
 
 
+def test_direct_buy_from_listing_reserves_stock():
+    client, Session = _app_client()
+    db = Session()
+    _, buyer, _, listing, _ = _seed_marketplace(db)
+    buyer_phone = buyer.phone_number
+    listing_id = listing.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={"listing_id": listing_id, "quantity_kg": 100, "fulfillment_mode": "pickup"},
+    )
+    assert order_resp.status_code == 201, order_resp.text
+
+    db = Session()
+    listing_row = db.get(Listing, listing_id)
+    assert listing_row.reserved_quantity_kg == 100
+    assert listing_row.quantity_kg == 500
+    db.close()
+
+
 def test_delivery_flow_pickup():
     client, Session = _app_client()
     db = Session()
     farmer, buyer, _, listing, conn = _seed_marketplace(db)
+    buyer_phone = buyer.phone_number
+    farmer_phone = farmer.phone_number
+    conn_id = conn.id
+    listing_id = listing.id
     db.close()
 
-    buyer_tok = _token(client, buyer.phone_number)
+    buyer_tok = _token(client, buyer_phone)
     order_resp = client.post(
         "/api/buyer/orders",
         headers={"Authorization": f"Bearer {buyer_tok}"},
-        json={"connection_id": conn.id, "quantity_kg": 100, "fulfillment_mode": "pickup"},
+        json={"connection_id": conn_id, "quantity_kg": 100, "fulfillment_mode": "pickup"},
     )
     assert order_resp.status_code == 201, order_resp.text
     order_id = order_resp.json()["order"]["id"]
     pin = order_resp.json()["handoff_pin"]
 
-    farmer_tok = _token(client, farmer.phone_number)
+    farmer_tok = _token(client, farmer_phone)
     confirm = client.post(
         f"/api/farmer/orders/{order_id}/confirm",
         headers={"Authorization": f"Bearer {farmer_tok}"},
@@ -143,22 +170,25 @@ def test_delivery_flow_pickup():
     assert handoff.json()["status"] == "delivered"
 
     db = Session()
-    listing_row = db.get(Listing, listing.id)
+    listing_row = db.get(Listing, listing_id)
     assert listing_row.quantity_kg == 400
 
 
 def test_delivery_flow_with_rider_dispatch():
     client, Session = _app_client()
     db = Session()
-    farmer, buyer, rider, _, conn = _seed_marketplace(db)
+    _, buyer, rider, _, conn = _seed_marketplace(db)
+    buyer_phone = buyer.phone_number
+    rider_phone = rider.phone_number
+    conn_id = conn.id
     db.close()
 
-    buyer_tok = _token(client, buyer.phone_number)
+    buyer_tok = _token(client, buyer_phone)
     order_resp = client.post(
         "/api/buyer/orders",
         headers={"Authorization": f"Bearer {buyer_tok}"},
         json={
-            "connection_id": conn.id,
+            "connection_id": conn_id,
             "quantity_kg": 50,
             "fulfillment_mode": "delivery",
             "delivery_address_label": "Shop",
@@ -169,16 +199,9 @@ def test_delivery_flow_with_rider_dispatch():
     assert order_resp.status_code == 201, order_resp.text
     order_id = order_resp.json()["order"]["id"]
     pin = order_resp.json()["handoff_pin"]
+    assert order_resp.json()["order"]["status"] == "searching_rider"
 
-    farmer_tok = _token(client, farmer.phone_number)
-    client.post(
-        f"/api/farmer/orders/{order_id}/confirm",
-        headers={"Authorization": f"Bearer {farmer_tok}"},
-        json={"confirmed_quantity_kg": 50, "pickup_latitude": 7.29, "pickup_longitude": 80.63},
-    )
-    client.post(f"/api/farmer/orders/{order_id}/ready", headers={"Authorization": f"Bearer {farmer_tok}"})
-
-    rider_tok = _token(client, rider.phone_number)
+    rider_tok = _token(client, rider_phone)
     client.post("/api/rider/online", headers={"Authorization": f"Bearer {rider_tok}"}, json={"online": True})
     client.post(
         "/api/rider/location",
@@ -211,6 +234,44 @@ def test_delivery_flow_with_rider_dispatch():
     assert complete.json()["status"] == "delivered"
 
 
+def test_nationwide_rider_jobs():
+    client, Session = _app_client()
+    db = Session()
+    _, buyer, rider, listing, _ = _seed_marketplace(db)
+    buyer_phone = buyer.phone_number
+    rider_phone = rider.phone_number
+    listing_id = listing.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={
+            "listing_id": listing_id,
+            "quantity_kg": 50,
+            "fulfillment_mode": "delivery",
+            "delivery_address_label": "Colombo shop",
+            "delivery_latitude": 6.93,
+            "delivery_longitude": 79.85,
+        },
+    )
+    assert order_resp.status_code == 201, order_resp.text
+    assert order_resp.json()["order"]["status"] == "searching_rider"
+
+    rider_tok = _token(client, rider_phone)
+    client.post("/api/rider/online", headers={"Authorization": f"Bearer {rider_tok}"}, json={"online": True})
+    client.post(
+        "/api/rider/location",
+        headers={"Authorization": f"Bearer {rider_tok}"},
+        json={"latitude": 6.93, "longitude": 79.85},
+    )
+
+    jobs = client.get("/api/rider/jobs", headers={"Authorization": f"Bearer {rider_tok}"})
+    assert jobs.status_code == 200, jobs.text
+    assert len(jobs.json()) >= 1
+
+
 def test_concurrent_rider_accept_only_one_wins():
     _, Session = _app_client()
     db = Session()
@@ -235,17 +296,13 @@ def test_concurrent_rider_accept_only_one_wins():
         delivery_latitude=7.30,
         delivery_longitude=80.64,
     )
-    farmer_confirm_order(
-        db,
-        farmer=farmer,
-        order_id=order.id,
-        confirmed_quantity_kg=20,
-        pickup_latitude=7.29,
-        pickup_longitude=80.63,
-    )
-    farmer_mark_ready(db, farmer=farmer, order_id=order.id)
+    rp = db.get(RiderProfile, rider.id)
+    rp.is_online = True
+    rp2 = db.get(RiderProfile, rider2.id)
+    rp2.is_online = True
     update_rider_location(db, rider, 7.28, 80.62)
     update_rider_location(db, rider2, 7.281, 80.621)
+    db.commit()
     accept_job(db, rider, order.id)
     with pytest.raises(ValueError, match="not available|already"):
         accept_job(db, rider2, order.id)

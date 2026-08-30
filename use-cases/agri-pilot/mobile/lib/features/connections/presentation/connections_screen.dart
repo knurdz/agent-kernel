@@ -4,12 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/shell/main_shell.dart';
+import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/domain/models.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../delivery/presentation/buyer_checkout_screen.dart';
-import '../../delivery/presentation/orders_list_screens.dart';
 import '../../delivery/presentation/rider_screens.dart';
 import '../../marketplace/data/marketplace_repository.dart';
 
@@ -24,10 +24,18 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   List<ConnectionItem> _items = [];
   var _loading = true;
   String? _error;
+  int? _loadedForUserId;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadIfReady());
+  }
+
+  void _loadIfReady() {
+    final user = ref.read(authControllerProvider).asData?.value;
+    if (user == null || user.id == _loadedForUserId) return;
+    _loadedForUserId = user.id;
     _load();
   }
 
@@ -47,7 +55,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
       _items = user?.isFarmer == true ? await repo.farmerConnections() : await repo.buyerConnections();
       ref.invalidate(pendingConnectionsCountProvider);
     } catch (e) {
-      _error = e.toString();
+      _error = apiErrorMessage(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -76,7 +84,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
 
   Future<void> _placeOrder(ConnectionItem item) async {
     final placed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => BuyerCheckoutScreen(connection: item)),
+      MaterialPageRoute(builder: (_) => BuyerCheckoutScreen(listing: item.listing)),
     );
     if (placed == true && mounted) {
       context.push('/orders');
@@ -90,6 +98,15 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<UserMe?>>(authControllerProvider, (previous, next) {
+      final prevUser = previous?.asData?.value;
+      final nextUser = next.asData?.value;
+      if (nextUser != null && prevUser?.id != nextUser.id) {
+        _loadedForUserId = nextUser.id;
+        _load();
+      }
+    });
+
     final user = ref.watch(authControllerProvider).asData?.value;
     if (user?.isRider == true) {
       return const RiderActiveDeliveryScreen();
@@ -130,7 +147,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Text(
-                              'Could not load connections. Pull to retry.',
+                              _error ?? 'Could not load connections. Pull to retry.',
                               style: TextStyle(color: theme.colorScheme.onErrorContainer),
                             ),
                           ),
@@ -173,6 +190,24 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                                         StatusChip(status: c.status),
                                       ],
                                     ),
+                                    if (isFarmer && c.buyer != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        c.buyer!.businessName?.isNotEmpty == true
+                                            ? '${c.buyer!.name} · ${c.buyer!.businessName}'
+                                            : c.buyer!.name,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      if (c.buyer!.district != null && c.buyer!.district!.isNotEmpty)
+                                        Text(
+                                          c.buyer!.district!,
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: theme.colorScheme.outline,
+                                          ),
+                                        ),
+                                    ],
                                     const SizedBox(height: 4),
                                     Text(
                                       '${c.listing.quantityKg.toStringAsFixed(0)} kg'

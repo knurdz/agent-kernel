@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from marketplace.auth import normalize_phone
 
@@ -478,12 +478,21 @@ class ListingInsights(BaseModel):
 
 
 class OrderCreate(BaseModel):
-    connection_id: int
+    connection_id: Optional[int] = None
+    listing_id: Optional[int] = None
     quantity_kg: float = Field(gt=0)
     fulfillment_mode: Literal["pickup", "delivery"]
     delivery_address_label: Optional[str] = Field(default=None, max_length=200)
     delivery_latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     delivery_longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def exactly_one_order_target(self) -> "OrderCreate":
+        has_connection = self.connection_id is not None
+        has_listing = self.listing_id is not None
+        if has_connection == has_listing:
+            raise ValueError("provide exactly one of connection_id or listing_id")
+        return self
 
 
 class OrderCreateResponse(BaseModel):

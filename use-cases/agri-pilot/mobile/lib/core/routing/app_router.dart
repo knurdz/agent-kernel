@@ -9,7 +9,6 @@ import '../../features/auth/providers/auth_provider.dart';
 import '../../features/channels/presentation/channels_screen.dart';
 import '../../features/chat/presentation/advisor_threads_screen.dart';
 import '../../features/chat/presentation/chat_screen.dart';
-import '../../features/connections/presentation/connections_screen.dart';
 import '../../features/delivery/presentation/order_tracking_screen.dart';
 import '../../features/delivery/presentation/orders_list_screens.dart';
 import '../../features/plants/presentation/plant_detail_screen.dart';
@@ -117,7 +116,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/connections',
-                builder: (_, __) => const ConnectionsScreen(),
+                builder: (_, __) => const InboxScreen(),
               ),
             ],
           ),

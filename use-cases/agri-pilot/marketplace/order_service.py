@@ -128,18 +128,88 @@ def list_farmer_orders(db: Session, farmer_id: int, limit: int = 20, offset: int
     return list(db.scalars(q).all())
 
 
+def _mark_listing_sold_if_depleted(listing: Listing) -> None:
+    if _available_quantity(listing) <= 0.001 and listing.status == ListingStatus.active.value:
+        listing.status = ListingStatus.sold.value
+
+
+def _resolve_connection_and_listing(
+    db: Session,
+    *,
+    buyer: User,
+    listing_id: Optional[int] = None,
+    connection_id: Optional[int] = None,
+) -> tuple[ConnectionRequest, Listing]:
+    if (listing_id is None) == (connection_id is None):
+        raise ValueError("provide exactly one of listing_id or connection_id")
+
+    if listing_id is not None:
+        listing = db.execute(select(Listing).where(Listing.id == listing_id).with_for_update()).scalar_one_or_none()
+        if not listing or listing.status != ListingStatus.active.value:
+            raise ValueError("listing not available")
+        if listing.farmer_id == buyer.id:
+            raise ValueError("cannot order own listing")
+        conn = ConnectionRequest(
+            listing_id=listing.id,
+            buyer_id=buyer.id,
+            status="accepted",
+            message="Direct buy",
+        )
+        db.add(conn)
+        db.flush()
+        return conn, listing
+
+    conn = db.get(ConnectionRequest, connection_id)
+    if not conn or conn.buyer_id != buyer.id:
+        raise ValueError("connection not found")
+    if conn.status == "pending":
+        conn.status = "accepted"
+        conn.updated_at = _utcnow()
+    elif conn.status not in {"accepted", "completed"}:
+        raise ValueError("connection not available")
+
+    existing = db.scalars(select(Order).where(Order.connection_id == connection_id)).first()
+    if existing:
+        raise ValueError("order already exists for this connection")
+
+    listing = db.execute(select(Listing).where(Listing.id == conn.listing_id).with_for_update()).scalar_one_or_none()
+    if not listing or listing.status != ListingStatus.active.value:
+        raise ValueError("listing not available")
+    return conn, listing
+
+
+def _auto_dispatch_delivery_if_ready(db: Session, order: Order, *, actor: User) -> None:
+    if order.fulfillment_mode != FulfillmentMode.delivery.value:
+        return
+    if not valid_coordinate(order.pickup_latitude, order.pickup_longitude):
+        return
+    if order.status != OrderStatus.pending_farmer_confirmation.value:
+        return
+    _transition_order(db, order, OrderStatus.confirmed.value, actor=actor, detail="auto-confirmed")
+    _transition_order(db, order, OrderStatus.ready.value, actor=actor)
+    delivery = Delivery(
+        order_id=order.id,
+        status=DeliveryStatus.searching.value,
+    )
+    db.add(delivery)
+    db.flush()
+    _transition_order(db, order, OrderStatus.searching_rider.value, actor=actor)
+    delivery.status = DeliveryStatus.searching.value
+
+
 def create_order(
     db: Session,
     *,
     buyer: User,
-    connection_id: int,
     quantity_kg: float,
     fulfillment_mode: str,
+    connection_id: Optional[int] = None,
+    listing_id: Optional[int] = None,
     delivery_address_label: Optional[str] = None,
     delivery_latitude: Optional[float] = None,
     delivery_longitude: Optional[float] = None,
 ) -> tuple[Order, Optional[str]]:
-    """Buyer creates order from accepted connection. Returns (order, handoff_pin_plain)."""
+    """Buyer creates order directly from a listing or legacy connection."""
     if buyer.role != UserRole.buyer.value:
         raise ValueError("buyer role required")
     if quantity_kg <= 0:
@@ -147,19 +217,12 @@ def create_order(
     if fulfillment_mode not in {FulfillmentMode.pickup.value, FulfillmentMode.delivery.value}:
         raise ValueError("invalid fulfillment_mode")
 
-    conn = db.get(ConnectionRequest, connection_id)
-    if not conn or conn.buyer_id != buyer.id:
-        raise ValueError("connection not found")
-    if conn.status != "accepted":
-        raise ValueError("connection must be accepted before ordering")
-
-    existing = db.scalars(select(Order).where(Order.connection_id == connection_id)).first()
-    if existing:
-        raise ValueError("order already exists for this connection")
-
-    listing = db.get(Listing, conn.listing_id)
-    if not listing or listing.status != ListingStatus.active.value:
-        raise ValueError("listing not available")
+    conn, listing = _resolve_connection_and_listing(
+        db,
+        buyer=buyer,
+        listing_id=listing_id,
+        connection_id=connection_id,
+    )
 
     farmer = db.get(User, listing.farmer_id)
     if not farmer:
@@ -176,9 +239,12 @@ def create_order(
         if not delivery_address_label:
             raise ValueError("delivery address required")
 
+    _reserve_quantity(db, listing, quantity_kg)
+    _mark_listing_sold_if_depleted(listing)
+
     pin_plain = generate_handoff_pin()
     order = Order(
-        connection_id=connection_id,
+        connection_id=conn.id,
         listing_id=listing.id,
         buyer_id=buyer.id,
         farmer_id=farmer.id,
@@ -198,6 +264,7 @@ def create_order(
     db.add(order)
     db.flush()
     _record_event(db, order, "created", actor=buyer, detail=f"mode={fulfillment_mode}")
+    _auto_dispatch_delivery_if_ready(db, order, actor=buyer)
     db.commit()
     db.refresh(order)
     return order, pin_plain
@@ -221,14 +288,15 @@ def farmer_confirm_order(
     if confirmed_quantity_kg <= 0:
         raise ValueError("quantity must be > 0")
 
-    listing = db.get(Listing, order.listing_id)
-    if not listing:
-        raise ValueError("listing not found")
-
     listing = db.execute(select(Listing).where(Listing.id == order.listing_id).with_for_update()).scalar_one()
-    _reserve_quantity(db, listing, confirmed_quantity_kg)
+    old_qty = float(order.quantity_kg)
+    new_qty = float(confirmed_quantity_kg)
+    if abs(new_qty - old_qty) > 0.001:
+        _release_quantity(db, listing, old_qty)
+        _reserve_quantity(db, listing, new_qty)
+        _mark_listing_sold_if_depleted(listing)
 
-    order.quantity_kg = float(confirmed_quantity_kg)
+    order.quantity_kg = new_qty
     if pickup_address_label:
         order.pickup_address_label = pickup_address_label
     if valid_coordinate(pickup_latitude, pickup_longitude):
@@ -252,6 +320,8 @@ def farmer_reject_order(db: Session, *, farmer: User, order_id: int, reason: Opt
         raise ValueError("order not found")
     if order.status != OrderStatus.pending_farmer_confirmation.value:
         raise ValueError("order not awaiting confirmation")
+    listing = db.execute(select(Listing).where(Listing.id == order.listing_id).with_for_update()).scalar_one()
+    _release_quantity(db, listing, order.quantity_kg)
     order.cancellation_reason = reason
     _transition_order(db, order, OrderStatus.farmer_rejected.value, actor=farmer, detail=reason)
     db.commit()
@@ -302,7 +372,12 @@ def cancel_order(db: Session, *, actor: User, order_id: int, reason: Optional[st
     if actor.role == UserRole.farmer.value and order.farmer_id != actor.id:
         raise ValueError("not your order")
 
-    if order.status in {OrderStatus.confirmed.value, OrderStatus.ready.value, OrderStatus.searching_rider.value}:
+    if order.status in {
+        OrderStatus.pending_farmer_confirmation.value,
+        OrderStatus.confirmed.value,
+        OrderStatus.ready.value,
+        OrderStatus.searching_rider.value,
+    }:
         listing = db.execute(select(Listing).where(Listing.id == order.listing_id).with_for_update()).scalar_one()
         _release_quantity(db, listing, order.quantity_kg)
 

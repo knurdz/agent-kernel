@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/widgets/map_widgets.dart';
@@ -7,9 +8,9 @@ import '../../auth/domain/models.dart';
 import '../data/delivery_repository.dart';
 
 class BuyerCheckoutScreen extends ConsumerStatefulWidget {
-  const BuyerCheckoutScreen({super.key, required this.connection});
+  const BuyerCheckoutScreen({super.key, required this.listing});
 
-  final ConnectionItem connection;
+  final Listing listing;
 
   @override
   ConsumerState<BuyerCheckoutScreen> createState() => _BuyerCheckoutScreenState();
@@ -25,7 +26,7 @@ class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
   @override
   void initState() {
     super.initState();
-    _qtyCtrl.text = widget.connection.listing.quantityKg.toStringAsFixed(0);
+    _qtyCtrl.text = widget.listing.displayQuantityKg.toStringAsFixed(0);
   }
 
   @override
@@ -65,7 +66,7 @@ class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
     try {
       final repo = ref.read(deliveryRepositoryProvider);
       final result = await repo.createOrder(
-        connectionId: widget.connection.id,
+        listingId: widget.listing.id,
         quantityKg: qty,
         fulfillmentMode: _mode,
         deliveryAddressLabel: _deliveryLabel,
@@ -75,15 +76,22 @@ class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: const Text('Order placed'),
           content: Text(
             'Your handoff PIN is ${result.handoffPin}. Share it only at pickup/delivery.\n\nPayment is cash/off-platform.',
           ),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       );
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+      context.push('/orders');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
@@ -98,7 +106,9 @@ class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('${widget.connection.listing.crop} · max ${widget.connection.listing.quantityKg.toStringAsFixed(0)} kg'),
+          Text(
+            '${widget.listing.crop} · max ${widget.listing.displayQuantityKg.toStringAsFixed(0)} kg',
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _qtyCtrl,

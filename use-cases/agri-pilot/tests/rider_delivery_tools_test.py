@@ -55,7 +55,7 @@ def _seed_delivery(db):
     )
     db.add_all([farmer, buyer, rider])
     db.flush()
-    db.add(FarmerProfile(user_id=farmer.id, district="Kandy", latitude=7.29, longitude=80.63))
+    db.add(FarmerProfile(user_id=farmer.id, district="Kandy", address_label="Farm gate", latitude=7.29, longitude=80.63))
     db.add(BuyerProfile(user_id=buyer.id, district="Colombo"))
     db.add(RiderProfile(user_id=rider.id, has_vehicle=True, is_online=False, latitude=7.28, longitude=80.62))
     listing = Listing(
@@ -109,18 +109,8 @@ def test_my_orders_rider_includes_crop(mock_identity):
         delivery_address_label="Colombo shop",
         delivery_latitude=6.93,
         delivery_longitude=79.85,
-    )
-    farmer_confirm_order(
-        db,
-        farmer=farmer,
-        order_id=order.id,
-        confirmed_quantity_kg=50,
-        pickup_address_label="Farm gate",
-        pickup_latitude=7.29,
-        pickup_longitude=80.63,
-    )
-    farmer_mark_ready(db, farmer=farmer, order_id=order.id)
-    update_rider_location(db, rider, 7.28, 80.62)
+    )[0]
+    update_rider_location(db, rider, 6.93, 79.85)
     rp = db.get(RiderProfile, rider.id)
     rp.is_online = True
     db.commit()

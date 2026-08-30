@@ -31,8 +31,11 @@ class MainShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authControllerProvider).asData?.value;
     final isRider = user?.isRider == true;
+    final isBuyer = user?.isBuyer == true;
+    final isFarmer = user?.isFarmer == true;
     final pendingAsync = ref.watch(pendingConnectionsCountProvider);
     final pendingCount = pendingAsync.asData?.value ?? 0;
+    final inboxLabel = isRider ? 'Deliveries' : (isBuyer ? 'Orders' : 'Inbox');
 
     return Scaffold(
       body: navigationShell,
@@ -51,13 +54,13 @@ class MainShell extends ConsumerWidget {
             label: 'Advisor',
           ),
           NavigationDestination(
-            icon: pendingCount > 0 && !isRider
+            icon: pendingCount > 0 && isFarmer
                 ? Badge(label: Text('$pendingCount'), child: const Icon(Icons.inbox_outlined))
-                : Icon(isRider ? Icons.local_shipping_outlined : Icons.inbox_outlined),
-            selectedIcon: pendingCount > 0 && !isRider
+                : Icon(isRider ? Icons.local_shipping_outlined : Icons.receipt_long_outlined),
+            selectedIcon: pendingCount > 0 && isFarmer
                 ? Badge(label: Text('$pendingCount'), child: const Icon(Icons.inbox))
-                : Icon(isRider ? Icons.local_shipping : Icons.inbox),
-            label: isRider ? 'Deliveries' : 'Inbox',
+                : Icon(isRider ? Icons.local_shipping : Icons.receipt_long),
+            label: inboxLabel,
           ),
           const NavigationDestination(
             icon: Icon(Icons.person_outline),

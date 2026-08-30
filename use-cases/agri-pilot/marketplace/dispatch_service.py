@@ -51,6 +51,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _get_or_create_rider_profile(db: Session, rider: User) -> RiderProfile:
     if rider.role != UserRole.rider.value:
         raise ValueError("rider role required")
@@ -86,7 +92,7 @@ def update_rider_location(
     rp = _get_or_create_rider_profile(db, rider)
     now = _utcnow()
     if rp.last_location_at:
-        elapsed = (now - rp.last_location_at).total_seconds()
+        elapsed = (_utcnow() - _as_utc(rp.last_location_at)).total_seconds()
         if elapsed < get_min_location_interval_seconds():
             return rp
     rp.latitude = latitude
@@ -127,14 +133,14 @@ def get_active_delivery(db: Session, rider: User) -> Optional[Delivery]:
 
 def list_available_jobs(db: Session, rider: User, limit: int = 20) -> list[dict]:
     rp = _get_or_create_rider_profile(db, rider)
-    if not rp.is_online or not valid_coordinate(rp.latitude, rp.longitude):
+    if not rp.is_online:
         return []
 
     if get_active_delivery(db, rider):
         return []
 
-    radius = get_dispatch_radius_km()
-    min_lat, max_lat, min_lon, max_lon = bounding_box(rp.latitude, rp.longitude, radius)
+    rider_lat = rp.latitude if valid_coordinate(rp.latitude, rp.longitude) else None
+    rider_lon = rp.longitude if valid_coordinate(rp.latitude, rp.longitude) else None
 
     rejected_subq = select(RiderJobDecision.order_id).where(
         RiderJobDecision.rider_id == rider.id,
@@ -150,10 +156,6 @@ def list_available_jobs(db: Session, rider: User, limit: int = 20) -> list[dict]
             Delivery.rider_id.is_(None),
             Order.pickup_latitude.isnot(None),
             Order.pickup_longitude.isnot(None),
-            Order.pickup_latitude >= min_lat,
-            Order.pickup_latitude <= max_lat,
-            Order.pickup_longitude >= min_lon,
-            Order.pickup_longitude <= max_lon,
             Order.id.notin_(rejected_subq),
         )
         .limit(limit * 3)
@@ -161,15 +163,22 @@ def list_available_jobs(db: Session, rider: User, limit: int = 20) -> list[dict]
     rows = db.execute(q).all()
     jobs: list[dict] = []
     for order, delivery in rows:
-        dist_km = haversine_km(rp.latitude, rp.longitude, order.pickup_latitude, order.pickup_longitude)
-        if dist_km > radius:
-            continue
-        route = estimate_route(
-            rp.latitude,
-            rp.longitude,
-            order.pickup_latitude,
-            order.pickup_longitude,
-        )
+        if rider_lat is not None and rider_lon is not None:
+            dist_km = haversine_km(rider_lat, rider_lon, order.pickup_latitude, order.pickup_longitude)
+            route = estimate_route(
+                rider_lat,
+                rider_lon,
+                order.pickup_latitude,
+                order.pickup_longitude,
+            )
+        else:
+            dist_km = 0.0
+            route = estimate_route(
+                order.pickup_latitude,
+                order.pickup_longitude,
+                order.delivery_latitude or order.pickup_latitude,
+                order.delivery_longitude or order.pickup_longitude,
+            )
         jobs.append(
             {
                 "order_id": order.id,
@@ -219,7 +228,7 @@ def accept_job(db: Session, rider: User, order_id: int) -> Delivery:
         raise ValueError("rider must be online with valid location")
 
     stale_seconds = get_location_stale_seconds()
-    if rp.last_location_at and (_utcnow() - rp.last_location_at).total_seconds() > stale_seconds:
+    if rp.last_location_at and (_utcnow() - _as_utc(rp.last_location_at)).total_seconds() > stale_seconds:
         raise ValueError("rider location is stale — update GPS first")
 
     order = db.execute(select(Order).where(Order.id == order_id).with_for_update()).scalar_one_or_none()

@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/location/rider_location_tracker.dart';
+import '../../../core/network/dio_client.dart';
 import '../../../core/widgets/map_widgets.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -44,13 +45,19 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
     setState(() => _loading = true);
     try {
       if (_online) {
-        final pos = await Geolocator.getCurrentPosition();
-        await ref.read(deliveryRepositoryProvider).postLocation(pos.latitude, pos.longitude, accuracy: pos.accuracy);
+        try {
+          final pos = await Geolocator.getCurrentPosition();
+          await ref.read(deliveryRepositoryProvider).postLocation(pos.latitude, pos.longitude, accuracy: pos.accuracy);
+        } catch (_) {
+          // Location optional for nationwide job listing.
+        }
       }
       final jobs = await ref.read(deliveryRepositoryProvider).availableJobs();
       if (mounted) setState(() => _jobs = jobs);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -71,7 +78,9 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
       }
       await _refresh();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+      }
     }
   }
 
@@ -107,7 +116,20 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
           : RefreshIndicator(
               onRefresh: _refresh,
               child: _jobs.isEmpty
-                  ? ListView(children: const [SizedBox(height: 120, child: Center(child: Text('No jobs nearby')))])
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(
+                          height: 120,
+                          child: Center(
+                            child: Text(
+                              _online ? 'No delivery jobs available' : 'Go online to see delivery jobs',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
                       itemCount: _jobs.length,

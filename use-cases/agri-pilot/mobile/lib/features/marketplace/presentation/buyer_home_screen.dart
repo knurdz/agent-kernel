@@ -4,11 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/network/dio_client.dart';
-import '../../../core/shell/main_shell.dart';
 import '../../../core/widgets/authenticated_photo.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/listing_card.dart';
 import '../../auth/domain/models.dart';
+import '../../delivery/presentation/buyer_checkout_screen.dart';
 import '../../plants/data/plants_repository.dart';
 import '../data/marketplace_repository.dart';
 
@@ -140,21 +140,12 @@ class _BuyerHomeScreenState extends ConsumerState<BuyerHomeScreen> {
     }
   }
 
-  Future<void> _connect(Listing listing) async {
-    try {
-      await ref.read(marketplaceRepositoryProvider).connect(listing.id, message: 'Interested in your ${listing.crop}');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connection request sent')),
-        );
-        ref.invalidate(pendingConnectionsCountProvider);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e is ApiException ? e.message : 'Could not connect')),
-        );
-      }
+  Future<void> _buy(Listing listing) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => BuyerCheckoutScreen(listing: listing)),
+    );
+    if (mounted) {
+      await _browse();
     }
   }
 
@@ -183,10 +174,9 @@ class _BuyerHomeScreenState extends ConsumerState<BuyerHomeScreen> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (display.photoUrl != null)
@@ -254,9 +244,9 @@ class _BuyerHomeScreenState extends ConsumerState<BuyerHomeScreen> {
                 FilledButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    _connect(display);
+                    _buy(display);
                   },
-                  child: const Text('Connect with farmer'),
+                  child: const Text('Buy'),
                 ),
               ],
             ),
@@ -273,6 +263,13 @@ class _BuyerHomeScreenState extends ConsumerState<BuyerHomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Marketplace'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long),
+            tooltip: 'My orders',
+            onPressed: () => context.push('/orders'),
+          ),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -514,9 +511,9 @@ class _BuyerHomeScreenState extends ConsumerState<BuyerHomeScreen> {
           showDistrict: true,
           subtitle: _matchReasons[listing.id],
           onTap: () => _showListingDetail(listing),
-          trailing: FilledButton.tonal(
-            onPressed: () => _connect(listing),
-            child: const Text('Connect'),
+          trailing: FilledButton(
+            onPressed: () => _buy(listing),
+            child: const Text('Buy'),
           ),
         );
       },

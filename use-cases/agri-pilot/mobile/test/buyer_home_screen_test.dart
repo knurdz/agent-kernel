@@ -1,3 +1,4 @@
+import 'package:agripilot_mobile/core/theme/app_theme.dart';
 import 'package:agripilot_mobile/core/widgets/listing_card.dart';
 import 'package:agripilot_mobile/features/auth/domain/models.dart';
 import 'package:agripilot_mobile/features/marketplace/data/marketplace_repository.dart';
@@ -40,8 +41,20 @@ class _FakeMarketplaceRepository extends MarketplaceRepository {
   }
 }
 
+Widget _buyerHome({required MarketplaceRepository repo}) {
+  return ProviderScope(
+    overrides: [
+      marketplaceRepositoryProvider.overrideWith((ref) => repo),
+    ],
+    child: MaterialApp(
+      theme: AppTheme.light,
+      home: const BuyerHomeScreen(),
+    ),
+  );
+}
+
 void main() {
-  testWidgets('Buyer home shows listing cards below the count', (tester) async {
+  testWidgets('Buyer home shows listing cards with Buy action', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -53,12 +66,7 @@ void main() {
     ];
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          marketplaceRepositoryProvider.overrideWith((ref) => _FakeMarketplaceRepository(listings)),
-        ],
-        child: const MaterialApp(home: BuyerHomeScreen()),
-      ),
+      _buyerHome(repo: _FakeMarketplaceRepository(listings)),
     );
 
     await tester.pumpAndSettle();
@@ -67,16 +75,29 @@ void main() {
     expect(find.byType(ListingCard), findsNWidgets(2));
     expect(find.text('Tomato'), findsOneWidget);
     expect(find.text('Beans'), findsOneWidget);
-    expect(find.text('Connect'), findsNWidgets(2));
+    expect(find.text('Buy'), findsNWidgets(2));
     expect(find.text('Search filters'), findsOneWidget);
-    expect(find.byType(TextField), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
-    await tester.tap(find.text('Search filters'));
+  testWidgets('Listing detail shows Buy button', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final listings = [_listing(id: 1, crop: 'tomato', district: 'Kandy')];
+
+    await tester.pumpWidget(
+      _buyerHome(repo: _FakeMarketplaceRepository(listings)),
+    );
+
     await tester.pumpAndSettle();
 
-    expect(find.byType(TextField), findsNWidgets(3));
-    await tester.enterText(find.byType(TextField).first, 'beans');
-    expect(find.widgetWithText(TextField, 'beans'), findsOneWidget);
+    await tester.tap(find.text('Tomato'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Buy'), findsAtLeastNWidgets(1));
     expect(tester.takeException(), isNull);
   });
 
@@ -89,12 +110,7 @@ void main() {
     final listings = [_listing(id: 1, crop: 'tomato', district: 'Kandy')];
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          marketplaceRepositoryProvider.overrideWith((ref) => _FakeMarketplaceRepository(listings)),
-        ],
-        child: const MaterialApp(home: BuyerHomeScreen()),
-      ),
+      _buyerHome(repo: _FakeMarketplaceRepository(listings)),
     );
 
     await tester.pumpAndSettle();
@@ -111,15 +127,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ListingCard with Connect trailing keeps crop title visible', (tester) async {
+  testWidgets('ListingCard with Buy trailing keeps crop title visible', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light,
         home: Scaffold(
           body: ListingCard(
             listing: _listing(id: 1, crop: 'tomato', district: 'Kandy'),
             showStatus: false,
             showDistrict: true,
-            trailing: FilledButton.tonal(onPressed: () {}, child: const Text('Connect')),
+            trailing: FilledButton(onPressed: () {}, child: const Text('Buy')),
           ),
         ),
       ),
@@ -127,7 +144,7 @@ void main() {
 
     expect(find.text('Tomato'), findsOneWidget);
     expect(find.text('Kandy'), findsOneWidget);
-    expect(find.text('Connect'), findsOneWidget);
+    expect(find.text('Buy'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

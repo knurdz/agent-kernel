@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/map_widgets.dart';
 import '../../../core/widgets/status_chip.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../connections/presentation/connections_screen.dart';
 import '../data/delivery_repository.dart';
+
+class InboxScreen extends ConsumerWidget {
+  const InboxScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider).asData?.value;
+    if (user?.isBuyer == true) {
+      return const BuyerOrdersScreen();
+    }
+    return const ConnectionsScreen();
+  }
+}
 
 class FarmerOrdersScreen extends ConsumerStatefulWidget {
   const FarmerOrdersScreen({super.key});
@@ -67,6 +84,7 @@ class _FarmerOrdersScreenState extends ConsumerState<FarmerOrdersScreen> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 itemCount: _orders.length,
                 itemBuilder: (_, i) {
@@ -129,21 +147,34 @@ class _BuyerOrdersScreenState extends ConsumerState<BuyerOrdersScreen> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _orders.length,
-                itemBuilder: (_, i) {
-                  final o = _orders[i];
-                  return Card(
-                    child: ListTile(
-                      title: Text('${o.crop} · ${o.quantityKg.toStringAsFixed(0)} kg'),
-                      subtitle: Text('${o.fulfillmentMode} · ${o.status}'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).pushNamed('/orders/${o.id}/track'),
+              child: _orders.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 48),
+                        EmptyState(
+                          icon: Icons.receipt_long_outlined,
+                          title: 'No orders yet',
+                          subtitle: 'Your past purchases will appear here after you buy from the marketplace.',
+                        ),
+                      ],
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _orders.length,
+                      itemBuilder: (_, i) {
+                        final o = _orders[i];
+                        return Card(
+                          child: ListTile(
+                            title: Text('${o.crop} · ${o.quantityKg.toStringAsFixed(0)} kg'),
+                            subtitle: Text('${o.fulfillmentMode} · ${o.status}'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => context.push('/orders/${o.id}/track'),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
     );
   }
