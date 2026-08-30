@@ -22,7 +22,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _name = TextEditingController();
   final _district = TextEditingController();
   String _role = 'farmer';
-  var _hasVehicle = false;
+  var _hasVehicle = true;
   var _loading = false;
   String? _error;
 

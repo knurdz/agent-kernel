@@ -434,7 +434,7 @@ cmd_deploy() {
   compose pull db redis caddy || true
 
   log "Building application image..."
-  compose build app migrate
+  compose build app
 
   log "Starting database and Redis..."
   compose up -d db redis

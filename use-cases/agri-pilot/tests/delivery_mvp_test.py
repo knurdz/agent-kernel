@@ -12,7 +12,8 @@ from sqlalchemy.pool import StaticPool
 import marketplace.models  # noqa: F401
 from marketplace.auth import hash_password
 from marketplace.database import Base, get_db
-from marketplace.models import BuyerProfile, ConnectionRequest, FarmerProfile, Listing, RiderProfile, User
+from marketplace.models import BuyerProfile, ConnectionRequest, FarmerProfile, Listing, Order, RiderProfile, User
+from marketplace.delivery_utils import hash_handoff_pin
 from marketplace.routers.auth import router as auth_router
 from marketplace.routers.orders_buyer import router as orders_buyer_router
 from marketplace.routers.orders_farmer import router as orders_farmer_router
@@ -84,6 +85,40 @@ def _seed_marketplace(db):
     db.add(conn)
     db.commit()
     return farmer, buyer, rider, listing, conn
+
+
+def _seed_marketplace_district_only(db):
+    """Farmer with district but no GPS — mirrors typical production signup."""
+    farmer = User(
+        phone_number="+94770003001",
+        role="farmer",
+        password_hash=hash_password("secret123"),
+        name="District Farmer",
+        subscription_status="active",
+    )
+    buyer = User(
+        phone_number="+94770003002",
+        role="buyer",
+        password_hash=hash_password("secret123"),
+        name="Buyer",
+        subscription_status="none",
+    )
+    rider = User(
+        phone_number="+94770003003",
+        role="rider",
+        password_hash=hash_password("secret123"),
+        name="Rider",
+        subscription_status="none",
+    )
+    db.add_all([farmer, buyer, rider])
+    db.flush()
+    db.add(FarmerProfile(user_id=farmer.id, district="Kandy", address_label="Farm gate"))
+    db.add(BuyerProfile(user_id=buyer.id, district="Kandy"))
+    db.add(RiderProfile(user_id=rider.id, has_vehicle=True, is_online=False, latitude=7.28, longitude=80.62))
+    listing = Listing(farmer_id=farmer.id, crop="tomato", quantity_kg=500, price_per_kg=120, status="active")
+    db.add(listing)
+    db.commit()
+    return farmer, buyer, rider, listing
 
 
 def _token(client, phone):
@@ -270,6 +305,116 @@ def test_nationwide_rider_jobs():
     jobs = client.get("/api/rider/jobs", headers={"Authorization": f"Bearer {rider_tok}"})
     assert jobs.status_code == 200, jobs.text
     assert len(jobs.json()) >= 1
+
+
+def test_delivery_without_farmer_gps_uses_district_centroid():
+    client, Session = _app_client()
+    db = Session()
+    _, buyer, rider, listing = _seed_marketplace_district_only(db)
+    buyer_phone = buyer.phone_number
+    rider_phone = rider.phone_number
+    listing_id = listing.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={
+            "listing_id": listing_id,
+            "quantity_kg": 50,
+            "fulfillment_mode": "delivery",
+            "delivery_address_label": "Colombo shop",
+            "delivery_latitude": 6.93,
+            "delivery_longitude": 79.85,
+        },
+    )
+    assert order_resp.status_code == 201, order_resp.text
+    body = order_resp.json()["order"]
+    assert body["status"] == "searching_rider"
+    assert body["pickup_latitude"] is not None
+    assert body["pickup_longitude"] is not None
+
+    rider_tok = _token(client, rider_phone)
+    client.post("/api/rider/online", headers={"Authorization": f"Bearer {rider_tok}"}, json={"online": True})
+    jobs = client.get("/api/rider/jobs", headers={"Authorization": f"Bearer {rider_tok}"})
+    assert jobs.status_code == 200, jobs.text
+    assert len(jobs.json()) >= 1
+
+
+def test_delivery_rejects_when_farmer_has_no_pickup_location():
+    client, Session = _app_client()
+    db = Session()
+    farmer = User(
+        phone_number="+94770004001",
+        role="farmer",
+        password_hash=hash_password("secret123"),
+        name="NoLoc Farmer",
+        subscription_status="active",
+    )
+    buyer = User(
+        phone_number="+94770004002",
+        role="buyer",
+        password_hash=hash_password("secret123"),
+        name="Buyer",
+        subscription_status="none",
+    )
+    db.add_all([farmer, buyer])
+    db.flush()
+    db.add(FarmerProfile(user_id=farmer.id))
+    db.add(BuyerProfile(user_id=buyer.id))
+    listing = Listing(farmer_id=farmer.id, crop="tomato", quantity_kg=100, price_per_kg=120, status="active")
+    db.add(listing)
+    db.commit()
+    buyer_phone = buyer.phone_number
+    listing_id = listing.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={
+            "listing_id": listing_id,
+            "quantity_kg": 10,
+            "fulfillment_mode": "delivery",
+            "delivery_address_label": "Shop",
+            "delivery_latitude": 6.93,
+            "delivery_longitude": 79.85,
+        },
+    )
+    assert order_resp.status_code == 400, order_resp.text
+    assert "pickup location" in order_resp.json()["detail"].lower()
+
+
+def test_farmer_confirm_delivery_dispatches_stuck_order():
+    _, Session = _app_client()
+    db = Session()
+    farmer, buyer, _, listing = _seed_marketplace_district_only(db)
+    conn = ConnectionRequest(listing_id=listing.id, buyer_id=buyer.id, status="accepted")
+    db.add(conn)
+    db.flush()
+    order = Order(
+        connection_id=conn.id,
+        listing_id=listing.id,
+        buyer_id=buyer.id,
+        farmer_id=farmer.id,
+        crop=listing.crop,
+        quantity_kg=20,
+        price_per_kg=listing.price_per_kg,
+        fulfillment_mode="delivery",
+        status="pending_farmer_confirmation",
+        delivery_address_label="Buyer shop",
+        delivery_latitude=6.93,
+        delivery_longitude=79.85,
+        handoff_pin_hash=hash_handoff_pin("1234"),
+    )
+    db.add(order)
+    db.commit()
+
+    confirmed = farmer_confirm_order(db, farmer=farmer, order_id=order.id, confirmed_quantity_kg=20)
+    assert confirmed.status == "searching_rider"
+    db.close()
 
 
 def test_concurrent_rider_accept_only_one_wins():

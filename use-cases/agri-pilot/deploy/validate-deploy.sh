@@ -61,7 +61,7 @@ if [[ "${1:-}" == "--smoke" ]]; then
   trap cleanup EXIT
 
   log "Building app image..."
-  compose build app migrate
+  compose build app
 
   log "Starting db + redis..."
   compose up -d db redis

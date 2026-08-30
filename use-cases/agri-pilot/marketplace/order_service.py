@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from marketplace.delivery_utils import (
     generate_handoff_pin,
     hash_handoff_pin,
+    resolve_farmer_pickup,
     valid_coordinate,
     verify_handoff_pin,
 )
@@ -18,6 +19,7 @@ from marketplace.models import (
     ConnectionRequest,
     Delivery,
     DeliveryStatus,
+    FarmerProfile,
     FulfillmentMode,
     Listing,
     ListingStatus,
@@ -178,15 +180,25 @@ def _resolve_connection_and_listing(
     return conn, listing
 
 
-def _auto_dispatch_delivery_if_ready(db: Session, order: Order, *, actor: User) -> None:
-    if order.fulfillment_mode != FulfillmentMode.delivery.value:
+def _persist_farmer_pickup_profile(
+    db: Session,
+    fp: FarmerProfile | None,
+    lat: float,
+    lon: float,
+    label: Optional[str],
+) -> None:
+    """Cache resolved pickup coords on the farmer profile when GPS was missing."""
+    if fp is None or valid_coordinate(fp.latitude, fp.longitude):
         return
-    if not valid_coordinate(order.pickup_latitude, order.pickup_longitude):
+    if not valid_coordinate(lat, lon):
         return
-    if order.status != OrderStatus.pending_farmer_confirmation.value:
-        return
-    _transition_order(db, order, OrderStatus.confirmed.value, actor=actor, detail="auto-confirmed")
-    _transition_order(db, order, OrderStatus.ready.value, actor=actor)
+    fp.latitude = lat
+    fp.longitude = lon
+    if label and not fp.address_label:
+        fp.address_label = label
+
+
+def _create_delivery_search(db: Session, order: Order, *, actor: User) -> None:
     delivery = Delivery(
         order_id=order.id,
         status=DeliveryStatus.searching.value,
@@ -195,6 +207,29 @@ def _auto_dispatch_delivery_if_ready(db: Session, order: Order, *, actor: User) 
     db.flush()
     _transition_order(db, order, OrderStatus.searching_rider.value, actor=actor)
     delivery.status = DeliveryStatus.searching.value
+
+
+def _dispatch_delivery_order(
+    db: Session,
+    order: Order,
+    *,
+    actor: User,
+    require_coords: bool = True,
+) -> None:
+    """Advance a delivery order to searching_rider when pickup coordinates are known."""
+    if order.fulfillment_mode != FulfillmentMode.delivery.value:
+        return
+    if not valid_coordinate(order.pickup_latitude, order.pickup_longitude):
+        if require_coords:
+            raise ValueError("farmer pickup location missing — set farm district or pin")
+        return
+
+    if order.status == OrderStatus.pending_farmer_confirmation.value:
+        _transition_order(db, order, OrderStatus.confirmed.value, actor=actor, detail="auto-confirmed")
+    if order.status == OrderStatus.confirmed.value:
+        _transition_order(db, order, OrderStatus.ready.value, actor=actor)
+    if order.status == OrderStatus.ready.value:
+        _create_delivery_search(db, order, actor=actor)
 
 
 def create_order(
@@ -229,15 +264,15 @@ def create_order(
         raise ValueError("farmer not found")
 
     fp = farmer.farmer_profile
-    pickup_lat = fp.latitude if fp else None
-    pickup_lon = fp.longitude if fp else None
-    pickup_label = fp.address_label if fp else None
+    pickup_lat, pickup_lon, pickup_label = resolve_farmer_pickup(fp)
 
     if fulfillment_mode == FulfillmentMode.delivery.value:
         if not valid_coordinate(delivery_latitude, delivery_longitude):
             raise ValueError("delivery coordinates required for delivery mode")
         if not delivery_address_label:
             raise ValueError("delivery address required")
+        if not valid_coordinate(pickup_lat, pickup_lon):
+            raise ValueError("farmer pickup location missing — set farm district or pin")
 
     _reserve_quantity(db, listing, quantity_kg)
     _mark_listing_sold_if_depleted(listing)
@@ -264,7 +299,9 @@ def create_order(
     db.add(order)
     db.flush()
     _record_event(db, order, "created", actor=buyer, detail=f"mode={fulfillment_mode}")
-    _auto_dispatch_delivery_if_ready(db, order, actor=buyer)
+    if fulfillment_mode == FulfillmentMode.delivery.value:
+        _persist_farmer_pickup_profile(db, fp, pickup_lat, pickup_lon, pickup_label)
+        _dispatch_delivery_order(db, order, actor=buyer, require_coords=True)
     db.commit()
     db.refresh(order)
     return order, pin_plain
@@ -297,18 +334,31 @@ def farmer_confirm_order(
         _mark_listing_sold_if_depleted(listing)
 
     order.quantity_kg = new_qty
-    if pickup_address_label:
-        order.pickup_address_label = pickup_address_label
-    if valid_coordinate(pickup_latitude, pickup_longitude):
-        order.pickup_latitude = pickup_latitude
-        order.pickup_longitude = pickup_longitude
+    farmer = db.get(User, order.farmer_id)
+    fp = farmer.farmer_profile if farmer else None
+    lat_override = pickup_latitude if valid_coordinate(pickup_latitude, pickup_longitude) else order.pickup_latitude
+    lon_override = pickup_longitude if valid_coordinate(pickup_latitude, pickup_longitude) else order.pickup_longitude
+    resolved_lat, resolved_lon, resolved_label = resolve_farmer_pickup(
+        fp,
+        override_lat=lat_override,
+        override_lon=lon_override,
+        override_label=pickup_address_label or order.pickup_address_label,
+    )
+    if valid_coordinate(resolved_lat, resolved_lon):
+        order.pickup_latitude = resolved_lat
+        order.pickup_longitude = resolved_lon
+        if resolved_label:
+            order.pickup_address_label = resolved_label
 
     if order.fulfillment_mode == FulfillmentMode.delivery.value and not valid_coordinate(
         order.pickup_latitude, order.pickup_longitude
     ):
-        raise ValueError("farmer pickup coordinates required for delivery orders")
+        raise ValueError("farmer pickup location missing — set farm district or pin")
 
     _transition_order(db, order, OrderStatus.confirmed.value, actor=farmer)
+    if order.fulfillment_mode == FulfillmentMode.delivery.value:
+        _persist_farmer_pickup_profile(db, fp, order.pickup_latitude, order.pickup_longitude, order.pickup_address_label)
+        _dispatch_delivery_order(db, order, actor=farmer, require_coords=True)
     db.commit()
     db.refresh(order)
     return order

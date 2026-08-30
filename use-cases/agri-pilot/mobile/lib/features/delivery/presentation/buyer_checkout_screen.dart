@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/widgets/map_widgets.dart';
+import '../../../core/widgets/status_chip.dart';
 import '../../auth/domain/models.dart';
 import '../data/delivery_repository.dart';
 
@@ -18,7 +19,7 @@ class BuyerCheckoutScreen extends ConsumerStatefulWidget {
 
 class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
   final _qtyCtrl = TextEditingController();
-  var _mode = 'pickup';
+  var _mode = 'delivery';
   var _loading = false;
   LatLng? _deliveryPin;
   String? _deliveryLabel;
@@ -74,12 +75,17 @@ class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
         deliveryLongitude: _deliveryPin?.longitude,
       );
       if (!mounted) return;
+      final statusMessage = result.order.status == 'searching_rider'
+          ? 'We are finding a rider for your delivery.'
+          : result.order.fulfillmentMode == 'pickup'
+              ? 'The farmer will confirm your pickup order.'
+              : orderStatusLabel(result.order.status);
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Order placed'),
           content: Text(
-            'Your handoff PIN is ${result.handoffPin}. Share it only at pickup/delivery.\n\nPayment is cash/off-platform.',
+            '$statusMessage\n\nYour handoff PIN is ${result.handoffPin}. Share it only at pickup/delivery.\n\nPayment is cash/off-platform.',
           ),
           actions: [
             TextButton(

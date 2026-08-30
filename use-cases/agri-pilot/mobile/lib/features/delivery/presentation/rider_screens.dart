@@ -103,6 +103,8 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(authControllerProvider).asData?.value;
+    final hasVehicle = user?.profile?.hasVehicle ?? false;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Available jobs'),
@@ -123,7 +125,11 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
                           height: 120,
                           child: Center(
                             child: Text(
-                              _online ? 'No delivery jobs available' : 'Go online to see delivery jobs',
+                              !_online
+                                  ? 'Go online to see delivery jobs'
+                                  : !hasVehicle
+                                      ? 'Vehicle access must be enabled on your profile before you can go online'
+                                      : 'No delivery jobs available right now',
                               textAlign: TextAlign.center,
                             ),
                           ),

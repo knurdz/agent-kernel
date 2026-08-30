@@ -13,7 +13,14 @@ docs/
 e2e/
 ak-deployment/
 examples/
+ak-py/tests/
+use-cases/README.md
+use-cases/waste-sorting-assistant/
 use-cases/*/mobile/
+use-cases/agri-pilot/tests/
+use-cases/agri-pilot/PLAN.md
+use-cases/agri-pilot/plan/
+use-cases/agri-pilot/README.md
 use-cases/agri-pilot/data/chroma_db/
 use-cases/agri-pilot/data/app.db*
 use-cases/agri-pilot/deploy/backups/

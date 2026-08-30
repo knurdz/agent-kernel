@@ -695,6 +695,8 @@ class OrderItem {
     this.deliveryId,
     this.deliveryStatus,
     this.pickupAddressLabel,
+    this.pickupLatitude,
+    this.pickupLongitude,
     this.deliveryAddressLabel,
   });
 
@@ -710,6 +712,8 @@ class OrderItem {
         deliveryId: json['delivery_id'] as int?,
         deliveryStatus: json['delivery_status'] as String?,
         pickupAddressLabel: json['pickup_address_label'] as String?,
+        pickupLatitude: json['pickup_latitude'] != null ? (json['pickup_latitude'] as num).toDouble() : null,
+        pickupLongitude: json['pickup_longitude'] != null ? (json['pickup_longitude'] as num).toDouble() : null,
         deliveryAddressLabel: json['delivery_address_label'] as String?,
       );
 
@@ -724,7 +728,17 @@ class OrderItem {
   final int? deliveryId;
   final String? deliveryStatus;
   final String? pickupAddressLabel;
+  final double? pickupLatitude;
+  final double? pickupLongitude;
   final String? deliveryAddressLabel;
+
+  bool get hasPickupCoordinates =>
+      pickupLatitude != null &&
+      pickupLongitude != null &&
+      pickupLatitude! >= -90 &&
+      pickupLatitude! <= 90 &&
+      pickupLongitude! >= -180 &&
+      pickupLongitude! <= 180;
 }
 
 class OrderCreateResult {

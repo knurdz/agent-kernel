@@ -83,5 +83,50 @@ def valid_coordinate(lat: Optional[float], lon: Optional[float]) -> bool:
     return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
 
 
+# Approximate district centroids for Sri Lanka (no live geocoding in production).
+_DISTRICT_CENTROIDS: dict[str, tuple[float, float]] = {
+    "kandy": (7.2906, 80.6337),
+    "matale": (7.4675, 80.6234),
+    "nuwara eliya": (6.9497, 80.7891),
+    "galle": (6.0535, 80.2210),
+    "matara": (5.9549, 80.5550),
+    "colombo": (6.9271, 79.8612),
+    "gampaha": (7.0917, 79.9990),
+}
+
+
+def geocode_district_centroid(district: Optional[str]) -> Optional[tuple[float, float]]:
+    """Return approximate lat/lon for a Sri Lanka district name, or None."""
+    if not district or not district.strip():
+        return None
+    return _DISTRICT_CENTROIDS.get(district.strip().lower())
+
+
+def resolve_farmer_pickup(
+    farmer_profile,
+    *,
+    override_lat: Optional[float] = None,
+    override_lon: Optional[float] = None,
+    override_label: Optional[str] = None,
+) -> tuple[Optional[float], Optional[float], Optional[str]]:
+    """Resolve farm pickup coordinates: explicit pin, profile GPS, then district centroid."""
+    if valid_coordinate(override_lat, override_lon):
+        return override_lat, override_lon, override_label
+
+    if farmer_profile is not None and valid_coordinate(farmer_profile.latitude, farmer_profile.longitude):
+        label = farmer_profile.address_label
+        if not label and farmer_profile.district:
+            label = f"{farmer_profile.district}, Sri Lanka"
+        return farmer_profile.latitude, farmer_profile.longitude, label
+
+    if farmer_profile is not None and farmer_profile.district:
+        coords = geocode_district_centroid(farmer_profile.district)
+        if coords:
+            label = farmer_profile.address_label or f"{farmer_profile.district}, Sri Lanka"
+            return coords[0], coords[1], label
+
+    return None, None, None
+
+
 def new_idempotency_token() -> str:
     return secrets.token_hex(8)

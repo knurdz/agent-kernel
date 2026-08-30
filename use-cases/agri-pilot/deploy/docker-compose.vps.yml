@@ -46,9 +46,7 @@ services:
     logging: *default-logging
 
   migrate:
-    build:
-      context: ../../..
-      dockerfile: use-cases/agri-pilot/deploy/Dockerfile
+    image: agripilot-vps-app
     env_file:
       - path: .env.production
         required: true
@@ -67,6 +65,7 @@ services:
     build:
       context: ../../..
       dockerfile: use-cases/agri-pilot/deploy/Dockerfile
+    image: agripilot-vps-app
     restart: unless-stopped
     env_file:
       - path: .env.production

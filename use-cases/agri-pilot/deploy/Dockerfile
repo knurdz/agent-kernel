@@ -6,23 +6,13 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir uv
 
+ARG APP_UID=10001
+RUN useradd --create-home --uid ${APP_UID} --shell /usr/sbin/nologin agripilot \
+    && mkdir -p /app/data/plant_media /home/agripilot/.cache/chroma /home/agripilot/.cache/uv \
+    && chown -R agripilot:agripilot /app /home/agripilot
+
 WORKDIR /app
-
-COPY use-cases/agri-pilot/pyproject.toml use-cases/agri-pilot/uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
-
-# PyPI agentkernel 0.8.1 predates auth.authoriser and mobile thread routes — use monorepo ak-py.
-# --no-deps keeps uv.lock pins (langgraph-prebuilt==1.0.5) from being upgraded by ak-py extras.
-COPY ak-py /deps/ak-py
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python .venv/bin/python --reinstall --no-deps \
-    -e "/deps/ak-py"
-
-COPY use-cases/agri-pilot /app
-
-# Bake verified knowledge into the image so production does not depend on a runtime ingest step.
-RUN .venv/bin/python scripts/ingest_knowledge.py
+USER agripilot
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     UV_NO_SYNC=1 \
@@ -31,11 +21,31 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONHASHSEED=random
 
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin agripilot \
-    && mkdir -p /home/agripilot/.cache/chroma /home/agripilot/.cache/uv /app/data/plant_media \
-    && chown -R agripilot:agripilot /app /home/agripilot
+COPY --chown=agripilot:agripilot use-cases/agri-pilot/pyproject.toml use-cases/agri-pilot/uv.lock ./
+RUN --mount=type=cache,target=/home/agripilot/.cache/uv,uid=10001,gid=10001 \
+    uv sync --frozen --no-dev
 
-USER agripilot
+# PyPI agentkernel 0.8.1 predates auth.authoriser and mobile thread routes — use monorepo ak-py.
+# --no-deps keeps uv.lock pins (langgraph-prebuilt==1.0.5) from being upgraded by ak-py extras.
+COPY --chown=agripilot:agripilot ak-py /deps/ak-py
+RUN --mount=type=cache,target=/home/agripilot/.cache/uv,uid=10001,gid=10001 \
+    uv pip install --python .venv/bin/python --reinstall --no-deps \
+    -e "/deps/ak-py"
+
+# Bake verified knowledge in its own layer so marketplace/mobile-only deploys skip re-ingest.
+COPY --chown=agripilot:agripilot use-cases/agri-pilot/scripts/ingest_knowledge.py scripts/
+COPY --chown=agripilot:agripilot use-cases/agri-pilot/data/knowledge_docs data/knowledge_docs
+COPY --chown=agripilot:agripilot use-cases/agri-pilot/data/crop_guides data/crop_guides
+COPY --chown=agripilot:agripilot \
+    use-cases/agri-pilot/tools/__init__.py \
+    use-cases/agri-pilot/tools/crop_guide.py \
+    tools/
+RUN .venv/bin/python scripts/ingest_knowledge.py
+
+COPY --chown=agripilot:agripilot use-cases/agri-pilot /app
+
+# Final app COPY must not drop the baked index (chroma_db is dockerignored in build context).
+RUN test -d data/chroma_db && test -n "$(ls -A data/chroma_db)"
 
 EXPOSE 8000
 
