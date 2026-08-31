@@ -3,10 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../../auth/domain/models.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class DeliveryRepository {
-  DeliveryRepository(this._dio);
+  DeliveryRepository(this._dio, this._rolePrefix);
   final Dio _dio;
+  final String? _rolePrefix;
+
+  String _ordersBase() {
+    switch (_rolePrefix) {
+      case 'farmer':
+        return '/api/farmer/orders';
+      case 'rider':
+        return '/api/rider/orders';
+      case 'buyer':
+      default:
+        return '/api/buyer/orders';
+    }
+  }
 
   // Buyer
   Future<OrderCreateResult> createOrder({
@@ -36,8 +50,13 @@ class DeliveryRepository {
   }
 
   Future<OrderTracking> tracking(int orderId) async {
-    final resp = await _dio.get('/api/buyer/orders/$orderId/tracking');
+    final resp = await _dio.get('${_ordersBase()}/$orderId/tracking');
     return OrderTracking.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<OrderItem> getOrder(int orderId) async {
+    final resp = await _dio.get('${_ordersBase()}/$orderId');
+    return OrderItem.fromJson(resp.data as Map<String, dynamic>);
   }
 
   Future<OrderItem> confirmHandoffBuyer(int orderId, String pin) async {
@@ -131,5 +150,11 @@ class DeliveryRepository {
 }
 
 final deliveryRepositoryProvider = Provider<DeliveryRepository>((ref) {
-  return DeliveryRepository(ref.watch(dioProvider));
+  final user = ref.watch(authControllerProvider).asData?.value;
+  final role = user?.isFarmer == true
+      ? 'farmer'
+      : user?.isRider == true
+          ? 'rider'
+          : 'buyer';
+  return DeliveryRepository(ref.watch(dioProvider), role);
 });

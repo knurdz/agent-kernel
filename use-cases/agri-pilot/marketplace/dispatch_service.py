@@ -239,17 +239,11 @@ def accept_job(db: Session, rider: User, order_id: int) -> Delivery:
     if not delivery or delivery.status != DeliveryStatus.searching.value or delivery.rider_id is not None:
         raise ValueError("job already assigned")
 
-    dest_lat = order.delivery_latitude
-    dest_lon = order.delivery_longitude
-    if not valid_coordinate(dest_lat, dest_lon):
-        dest_lat = order.pickup_latitude
-        dest_lon = order.pickup_longitude
-
     route = estimate_route(
+        rp.latitude,
+        rp.longitude,
         order.pickup_latitude,
         order.pickup_longitude,
-        dest_lat,
-        dest_lon,
     )
 
     now = _utcnow()
@@ -259,6 +253,7 @@ def accept_job(db: Session, rider: User, order_id: int) -> Delivery:
     delivery.route_distance_m = route.distance_m
     delivery.route_duration_s = route.duration_s
     delivery.route_polyline = route.polyline
+    delivery.route_refreshed_at = now
     delivery.rider_latitude = rp.latitude
     delivery.rider_longitude = rp.longitude
     delivery.rider_location_at = rp.last_location_at
@@ -286,6 +281,11 @@ def advance_delivery_status(db: Session, rider: User, delivery_id: int, new_stat
     delivery.updated_at = now
     if new_status == DeliveryStatus.picked_up.value:
         delivery.picked_up_at = now
+        order = db.get(Order, delivery.order_id)
+        if order:
+            from marketplace.tracking_service import refresh_delivery_route
+
+            refresh_delivery_route(db, delivery, order, force_osrm=True)
     if new_status == DeliveryStatus.delivered.value:
         delivery.delivered_at = now
 

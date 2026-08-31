@@ -577,14 +577,60 @@ class DeliveryStatusUpdate(BaseModel):
     status: Literal["en_route_pickup", "arrived_pickup", "picked_up", "in_transit", "delivered"]
 
 
+class TrackingPartyOut(BaseModel):
+    id: int
+    name: str
+    phone: Optional[str] = None
+
+
+class TrackingLocationOut(BaseModel):
+    address_label: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class TrackingRiderOut(BaseModel):
+    id: Optional[int] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    heading: Optional[float] = None
+    accuracy_m: Optional[float] = None
+    location_at: Optional[str] = None
+    stale: bool = True
+
+
+class TrackingEventOut(BaseModel):
+    event_type: str
+    detail: Optional[str] = None
+    created_at: str
+
+
 class TrackingResponse(BaseModel):
     order_id: int
+    delivery_id: Optional[int] = None
     status: str
     fulfillment_mode: str
     quantity_kg: float
     crop: str
-    pickup: dict
-    delivery: dict
-    rider: dict
+    price_per_kg: Optional[float] = None
+    estimated_total: Optional[float] = None
+    created_at: datetime
+    assigned_at: Optional[datetime] = None
+    picked_up_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    pickup: TrackingLocationOut
+    delivery: TrackingLocationOut
+    farmer: Optional[TrackingPartyOut] = None
+    buyer: Optional[TrackingPartyOut] = None
+    rider: TrackingRiderOut
     delivery_status: Optional[str] = None
-    events: list[dict] = Field(default_factory=list)
+    next_stop: Optional[Literal["pickup", "delivery"]] = None
+    remaining_distance_m: Optional[int] = None
+    remaining_duration_s: Optional[int] = None
+    route_polyline: Optional[str] = None
+    route_distance_m: Optional[int] = None
+    route_duration_s: Optional[int] = None
+    maps_available: bool = False
+    events: list[TrackingEventOut] = Field(default_factory=list)

@@ -10,6 +10,7 @@ import '../../../core/widgets/status_chip.dart';
 import '../../auth/domain/models.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../delivery/presentation/buyer_checkout_screen.dart';
+import '../../delivery/presentation/order_tracking_screen.dart';
 import '../../delivery/presentation/rider_screens.dart';
 import '../../marketplace/data/marketplace_repository.dart';
 
@@ -109,7 +110,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
 
     final user = ref.watch(authControllerProvider).asData?.value;
     if (user?.isRider == true) {
-      return const RiderActiveDeliveryScreen();
+      return const RiderDeliveriesScreen();
     }
 
     final isFarmer = user?.isFarmer == true;

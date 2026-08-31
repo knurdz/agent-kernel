@@ -698,6 +698,8 @@ class OrderItem {
     this.pickupLatitude,
     this.pickupLongitude,
     this.deliveryAddressLabel,
+    this.deliveryLatitude,
+    this.deliveryLongitude,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) => OrderItem(
@@ -715,6 +717,8 @@ class OrderItem {
         pickupLatitude: json['pickup_latitude'] != null ? (json['pickup_latitude'] as num).toDouble() : null,
         pickupLongitude: json['pickup_longitude'] != null ? (json['pickup_longitude'] as num).toDouble() : null,
         deliveryAddressLabel: json['delivery_address_label'] as String?,
+        deliveryLatitude: json['delivery_latitude'] != null ? (json['delivery_latitude'] as num).toDouble() : null,
+        deliveryLongitude: json['delivery_longitude'] != null ? (json['delivery_longitude'] as num).toDouble() : null,
       );
 
   final int id;
@@ -731,6 +735,8 @@ class OrderItem {
   final double? pickupLatitude;
   final double? pickupLongitude;
   final String? deliveryAddressLabel;
+  final double? deliveryLatitude;
+  final double? deliveryLongitude;
 
   bool get hasPickupCoordinates =>
       pickupLatitude != null &&
@@ -753,9 +759,113 @@ class OrderCreateResult {
   final String handoffPin;
 }
 
+class TrackingLocation {
+  TrackingLocation({this.addressLabel, this.latitude, this.longitude});
+
+  factory TrackingLocation.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return TrackingLocation();
+    return TrackingLocation(
+      addressLabel: json['address_label'] as String?,
+      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
+      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
+    );
+  }
+
+  final String? addressLabel;
+  final double? latitude;
+  final double? longitude;
+
+  bool get hasCoordinates =>
+      latitude != null &&
+      longitude != null &&
+      latitude! >= -90 &&
+      latitude! <= 90 &&
+      longitude! >= -180 &&
+      longitude! <= 180;
+}
+
+class TrackingParty {
+  TrackingParty({required this.id, required this.name, this.phone});
+
+  factory TrackingParty.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return TrackingParty(id: 0, name: '');
+    return TrackingParty(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      phone: json['phone'] as String?,
+    );
+  }
+
+  final int id;
+  final String name;
+  final String? phone;
+}
+
+class TrackingRider {
+  TrackingRider({
+    this.id,
+    this.name,
+    this.phone,
+    this.latitude,
+    this.longitude,
+    this.heading,
+    this.accuracyM,
+    this.locationAt,
+    this.stale = true,
+  });
+
+  factory TrackingRider.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return TrackingRider();
+    return TrackingRider(
+      id: json['id'] as int?,
+      name: json['name'] as String?,
+      phone: json['phone'] as String?,
+      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
+      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
+      heading: json['heading'] != null ? (json['heading'] as num).toDouble() : null,
+      accuracyM: json['accuracy_m'] != null ? (json['accuracy_m'] as num).toDouble() : null,
+      locationAt: json['location_at'] as String?,
+      stale: json['stale'] as bool? ?? true,
+    );
+  }
+
+  final int? id;
+  final String? name;
+  final String? phone;
+  final double? latitude;
+  final double? longitude;
+  final double? heading;
+  final double? accuracyM;
+  final String? locationAt;
+  final bool stale;
+
+  bool get hasCoordinates =>
+      latitude != null &&
+      longitude != null &&
+      latitude! >= -90 &&
+      latitude! <= 90 &&
+      longitude! >= -180 &&
+      longitude! <= 180;
+}
+
+class TrackingEvent {
+  TrackingEvent({required this.eventType, this.detail, required this.createdAt});
+
+  factory TrackingEvent.fromJson(Map<String, dynamic> json) => TrackingEvent(
+        eventType: json['event_type'] as String? ?? '',
+        detail: json['detail'] as String?,
+        createdAt: json['created_at'] as String? ?? '',
+      );
+
+  final String eventType;
+  final String? detail;
+  final String createdAt;
+}
+
 class OrderTracking {
   OrderTracking({
     required this.orderId,
+    this.deliveryId,
     required this.status,
     required this.fulfillmentMode,
     required this.quantityKg,
@@ -763,33 +873,87 @@ class OrderTracking {
     required this.pickup,
     required this.delivery,
     required this.rider,
-    this.deliveryStatus,
     required this.events,
+    this.pricePerKg,
+    this.estimatedTotal,
+    this.createdAt,
+    this.assignedAt,
+    this.pickedUpAt,
+    this.deliveredAt,
+    this.farmer,
+    this.buyer,
+    this.deliveryStatus,
+    this.nextStop,
+    this.remainingDistanceM,
+    this.remainingDurationS,
+    this.routePolyline,
+    this.routeDistanceM,
+    this.routeDurationS,
+    this.mapsAvailable = false,
   });
 
   factory OrderTracking.fromJson(Map<String, dynamic> json) => OrderTracking(
         orderId: json['order_id'] as int,
+        deliveryId: json['delivery_id'] as int?,
         status: json['status'] as String,
         fulfillmentMode: json['fulfillment_mode'] as String,
         quantityKg: (json['quantity_kg'] as num).toDouble(),
         crop: json['crop'] as String,
-        pickup: json['pickup'] as Map<String, dynamic>,
-        delivery: json['delivery'] as Map<String, dynamic>,
-        rider: json['rider'] as Map<String, dynamic>,
+        pickup: TrackingLocation.fromJson(json['pickup'] as Map<String, dynamic>?),
+        delivery: TrackingLocation.fromJson(json['delivery'] as Map<String, dynamic>?),
+        rider: TrackingRider.fromJson(json['rider'] as Map<String, dynamic>?),
+        events: (json['events'] as List<dynamic>? ?? [])
+            .map((e) => TrackingEvent.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        pricePerKg: json['price_per_kg'] != null ? (json['price_per_kg'] as num).toDouble() : null,
+        estimatedTotal: json['estimated_total'] != null ? (json['estimated_total'] as num).toDouble() : null,
+        createdAt: json['created_at'] as String?,
+        assignedAt: json['assigned_at'] as String?,
+        pickedUpAt: json['picked_up_at'] as String?,
+        deliveredAt: json['delivered_at'] as String?,
+        farmer: json['farmer'] != null ? TrackingParty.fromJson(json['farmer'] as Map<String, dynamic>) : null,
+        buyer: json['buyer'] != null ? TrackingParty.fromJson(json['buyer'] as Map<String, dynamic>) : null,
         deliveryStatus: json['delivery_status'] as String?,
-        events: (json['events'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
+        nextStop: json['next_stop'] as String?,
+        remainingDistanceM: json['remaining_distance_m'] as int?,
+        remainingDurationS: json['remaining_duration_s'] as int?,
+        routePolyline: json['route_polyline'] as String?,
+        routeDistanceM: json['route_distance_m'] as int?,
+        routeDurationS: json['route_duration_s'] as int?,
+        mapsAvailable: json['maps_available'] as bool? ?? false,
       );
 
   final int orderId;
+  final int? deliveryId;
   final String status;
   final String fulfillmentMode;
   final double quantityKg;
   final String crop;
-  final Map<String, dynamic> pickup;
-  final Map<String, dynamic> delivery;
-  final Map<String, dynamic> rider;
+  final double? pricePerKg;
+  final double? estimatedTotal;
+  final String? createdAt;
+  final String? assignedAt;
+  final String? pickedUpAt;
+  final String? deliveredAt;
+  final TrackingLocation pickup;
+  final TrackingLocation delivery;
+  final TrackingParty? farmer;
+  final TrackingParty? buyer;
+  final TrackingRider rider;
   final String? deliveryStatus;
-  final List<Map<String, dynamic>> events;
+  final String? nextStop;
+  final int? remainingDistanceM;
+  final int? remainingDurationS;
+  final String? routePolyline;
+  final int? routeDistanceM;
+  final int? routeDurationS;
+  final bool mapsAvailable;
+  final List<TrackingEvent> events;
+
+  bool get isLiveDelivery =>
+      fulfillmentMode == 'delivery' &&
+      deliveryStatus != null &&
+      !['delivered', 'cancelled', 'searching'].contains(deliveryStatus);
 }
 
 class RiderJob {

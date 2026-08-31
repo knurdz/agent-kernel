@@ -21,7 +21,7 @@ from marketplace.dispatch_service import (
 from marketplace.models import User
 from marketplace.notifications import notify_delivery_update
 from marketplace.order_serializers import order_to_response
-from marketplace.order_service import confirm_handoff, get_order
+from marketplace.order_service import confirm_handoff, get_order, get_order_tracking
 from marketplace.schemas import (
     DeliveryStatusUpdate,
     HandoffConfirm,
@@ -30,6 +30,7 @@ from marketplace.schemas import (
     RiderJobOut,
     RiderLocationUpdate,
     RiderOnlineUpdate,
+    TrackingResponse,
 )
 
 router = APIRouter(prefix="/api/rider", tags=["rider"])
@@ -143,10 +144,20 @@ def update_status(
         delivery = advance_delivery_status(db, rider, delivery_id, payload.status)
         order = get_order(db, delivery.order_id)
         if order:
-            notify_delivery_update(order.buyer_id, order.id, payload.status, f"Delivery update: {payload.status}")
+            msg = f"Delivery update: {payload.status.replace('_', ' ')}"
+            notify_delivery_update(order.buyer_id, order.id, payload.status, msg)
+            notify_delivery_update(order.farmer_id, order.id, payload.status, msg)
         return get_delivery_detail(db, delivery.id, rider)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/orders/{order_id}/tracking", response_model=TrackingResponse)
+def get_order_tracking_endpoint(order_id: int, db: Session = Depends(get_db), rider: User = Depends(_rider)):
+    try:
+        return get_order_tracking(db, order_id, rider)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/orders/{order_id}/confirm-handoff", response_model=OrderResponse)

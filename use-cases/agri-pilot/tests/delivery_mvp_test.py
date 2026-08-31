@@ -511,3 +511,120 @@ def test_handoff_pin_invalid():
     with pytest.raises(ValueError, match="invalid handoff PIN"):
         confirm_handoff(db, actor=buyer, order_id=order.id, pin="0000")
     db.close()
+
+
+def test_rich_tracking_payload_for_all_roles():
+    client, Session = _app_client()
+    db = Session()
+    farmer, buyer, rider, _, conn = _seed_marketplace(db)
+    buyer_phone = buyer.phone_number
+    farmer_phone = farmer.phone_number
+    rider_phone = rider.phone_number
+    conn_id = conn.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={
+            "connection_id": conn_id,
+            "quantity_kg": 50,
+            "fulfillment_mode": "delivery",
+            "delivery_address_label": "Shop",
+            "delivery_latitude": 7.30,
+            "delivery_longitude": 80.64,
+        },
+    )
+    assert order_resp.status_code == 201, order_resp.text
+    order_id = order_resp.json()["order"]["id"]
+
+    rider_tok = _token(client, rider_phone)
+    client.post("/api/rider/online", headers={"Authorization": f"Bearer {rider_tok}"}, json={"online": True})
+    accept = client.post(
+        f"/api/rider/jobs/{order_id}/accept",
+        headers={"Authorization": f"Bearer {rider_tok}"},
+        json={"latitude": 7.28, "longitude": 80.62},
+    )
+    assert accept.status_code == 200, accept.text
+
+    buyer_track = client.get(
+        f"/api/buyer/orders/{order_id}/tracking",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+    )
+    assert buyer_track.status_code == 200, buyer_track.text
+    body = buyer_track.json()
+    assert body["delivery_id"] is not None
+    assert body["farmer"]["name"] == "Farmer"
+    assert body["buyer"]["name"] == "Buyer"
+    assert body["rider"]["name"] == "Rider"
+    assert body["next_stop"] == "pickup"
+    assert body["remaining_distance_m"] is not None
+    assert body["remaining_duration_s"] is not None
+    assert "events" in body
+
+    farmer_tok = _token(client, farmer_phone)
+    farmer_track = client.get(
+        f"/api/farmer/orders/{order_id}/tracking",
+        headers={"Authorization": f"Bearer {farmer_tok}"},
+    )
+    assert farmer_track.status_code == 200, farmer_track.text
+
+    rider_track = client.get(
+        f"/api/rider/orders/{order_id}/tracking",
+        headers={"Authorization": f"Bearer {rider_tok}"},
+    )
+    assert rider_track.status_code == 200, rider_track.text
+    assert rider_track.json()["delivery_status"] == "assigned"
+
+
+def test_tracking_after_pickup_switches_next_stop():
+    client, Session = _app_client()
+    db = Session()
+    _, buyer, rider, _, conn = _seed_marketplace(db)
+    buyer_phone = buyer.phone_number
+    rider_phone = rider.phone_number
+    conn_id = conn.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={
+            "connection_id": conn_id,
+            "quantity_kg": 50,
+            "fulfillment_mode": "delivery",
+            "delivery_address_label": "Shop",
+            "delivery_latitude": 7.30,
+            "delivery_longitude": 80.64,
+        },
+    )
+    order_id = order_resp.json()["order"]["id"]
+    rider_tok = _token(client, rider_phone)
+    client.post("/api/rider/online", headers={"Authorization": f"Bearer {rider_tok}"}, json={"online": True})
+    client.post(
+        f"/api/rider/jobs/{order_id}/accept",
+        headers={"Authorization": f"Bearer {rider_tok}"},
+        json={"latitude": 7.28, "longitude": 80.62},
+    )
+    delivery_id = client.get(
+        f"/api/rider/deliveries/active",
+        headers={"Authorization": f"Bearer {rider_tok}"},
+    ).json()["delivery_id"]
+
+    for st in ["en_route_pickup", "arrived_pickup", "picked_up"]:
+        r = client.post(
+            f"/api/rider/deliveries/{delivery_id}/status",
+            headers={"Authorization": f"Bearer {rider_tok}"},
+            json={"status": st},
+        )
+        assert r.status_code == 200, r.text
+
+    track = client.get(
+        f"/api/buyer/orders/{order_id}/tracking",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+    )
+    assert track.status_code == 200, track.text
+    assert track.json()["next_stop"] == "delivery"
+    assert track.json()["status"] == "picked_up"

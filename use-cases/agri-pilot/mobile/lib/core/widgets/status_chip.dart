@@ -1,5 +1,56 @@
 import 'package:flutter/material.dart';
 
+String deliveryStatusLabel(String status) {
+  switch (status.toLowerCase()) {
+    case 'assigned':
+      return 'Assigned';
+    case 'en_route_pickup':
+      return 'En route to farm';
+    case 'arrived_pickup':
+      return 'At farm';
+    case 'picked_up':
+      return 'Picked up';
+    case 'in_transit':
+      return 'On the way to buyer';
+    case 'delivered':
+      return 'Delivered';
+    case 'searching':
+      return 'Finding rider';
+    default:
+      return status.replaceAll('_', ' ');
+  }
+}
+
+String orderEventLabel(String eventType) {
+  if (eventType.startsWith('status:')) {
+    return orderStatusLabel(eventType.substring(7));
+  }
+  switch (eventType.toLowerCase()) {
+    case 'created':
+      return 'Order placed';
+    case 'rider_assigned':
+      return 'Rider assigned';
+    default:
+      return eventType.replaceAll('_', ' ');
+  }
+}
+
+String formatDurationSeconds(int? seconds) {
+  if (seconds == null || seconds <= 0) return '—';
+  if (seconds < 60) return '< 1 min';
+  final mins = (seconds / 60).round();
+  if (mins < 60) return '~$mins min';
+  final hrs = mins ~/ 60;
+  final rem = mins % 60;
+  return rem == 0 ? '~$hrs hr' : '~$hrs hr $rem min';
+}
+
+String formatDistanceMeters(int? meters) {
+  if (meters == null || meters <= 0) return '—';
+  if (meters < 1000) return '${meters} m';
+  return '${(meters / 1000).toStringAsFixed(1)} km';
+}
+
 /// Human-readable label for marketplace order status values.
 String orderStatusLabel(String status) {
   switch (status.toLowerCase()) {

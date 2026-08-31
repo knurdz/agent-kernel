@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/location/rider_location_tracker.dart';
@@ -9,6 +10,7 @@ import '../../../core/widgets/map_widgets.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../data/delivery_repository.dart';
+import 'order_tracking_screen.dart';
 
 class RiderJobsScreen extends ConsumerStatefulWidget {
   const RiderJobsScreen({super.key});
@@ -139,7 +141,7 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Job accepted')));
-        await _refresh();
+        context.go('/orders/$orderId/track');
       }
     } catch (e) {
       if (mounted) {
@@ -221,6 +223,61 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
                       },
                     ),
             ),
+    );
+  }
+}
+
+class RiderDeliveriesScreen extends ConsumerStatefulWidget {
+  const RiderDeliveriesScreen({super.key});
+
+  @override
+  ConsumerState<RiderDeliveriesScreen> createState() => _RiderDeliveriesScreenState();
+}
+
+class _RiderDeliveriesScreenState extends ConsumerState<RiderDeliveriesScreen> {
+  var _loading = true;
+  Map<String, dynamic>? _active;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final d = await ref.read(deliveryRepositoryProvider).activeDelivery();
+      if (mounted) setState(() => _active = d);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final orderId = _active?['order_id'] as int?;
+    if (orderId != null) {
+      return OrderTrackingScreen(orderId: orderId);
+    }
+    return Scaffold(
+      appBar: AppBar(title: const Text('Deliveries')),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('No active delivery'),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () => context.go('/home'),
+              child: const Text('Browse jobs'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

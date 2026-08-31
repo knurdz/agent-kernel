@@ -63,6 +63,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _record_event(
     db: Session,
     order: Order,
@@ -501,19 +507,49 @@ def get_order_tracking(db: Session, order_id: int, actor: User) -> dict:
 
     delivery = order.delivery
     from marketplace.delivery_utils import get_location_stale_seconds
+    from marketplace.tracking_service import (
+        compute_live_leg,
+        party_snapshot,
+        refresh_delivery_route,
+        show_party_phones,
+    )
+
+    if delivery and delivery.rider_id is not None:
+        refresh_delivery_route(db, delivery, order)
+        db.flush()
+        db.refresh(delivery)
 
     stale_seconds = get_location_stale_seconds()
     rider_stale = True
     if delivery and delivery.rider_location_at:
-        age = (_utcnow() - delivery.rider_location_at).total_seconds()
+        age = (_utcnow() - _as_utc(delivery.rider_location_at)).total_seconds()
         rider_stale = age > stale_seconds
+
+    include_phones = show_party_phones(order, delivery)
+    farmer_user = db.get(User, order.farmer_id)
+    buyer_user = db.get(User, order.buyer_id)
+    rider_user = db.get(User, delivery.rider_id) if delivery and delivery.rider_id else None
+
+    live_leg = compute_live_leg(delivery, order)
+    estimated_total = None
+    if order.price_per_kg is not None:
+        estimated_total = round(order.price_per_kg * order.quantity_kg, 2)
+
+    maps_available = bool(live_leg.get("route_polyline"))
 
     return {
         "order_id": order.id,
+        "delivery_id": delivery.id if delivery else None,
         "status": order.status,
         "fulfillment_mode": order.fulfillment_mode,
         "quantity_kg": order.quantity_kg,
         "crop": order.crop,
+        "price_per_kg": order.price_per_kg,
+        "estimated_total": estimated_total,
+        "created_at": order.created_at,
+        "assigned_at": delivery.assigned_at if delivery else None,
+        "picked_up_at": delivery.picked_up_at if delivery else None,
+        "delivered_at": delivery.delivered_at if delivery else None,
         "pickup": {
             "address_label": order.pickup_address_label,
             "latitude": order.pickup_latitude,
@@ -524,19 +560,27 @@ def get_order_tracking(db: Session, order_id: int, actor: User) -> dict:
             "latitude": order.delivery_latitude,
             "longitude": order.delivery_longitude,
         },
+        "farmer": party_snapshot(farmer_user, include_phone=include_phones),
+        "buyer": party_snapshot(buyer_user, include_phone=include_phones),
         "rider": {
             "id": delivery.rider_id if delivery else None,
+            "name": rider_user.name if rider_user else None,
+            "phone": rider_user.phone_number if rider_user and include_phones else None,
             "latitude": delivery.rider_latitude if delivery else None,
             "longitude": delivery.rider_longitude if delivery else None,
             "heading": delivery.rider_heading if delivery else None,
             "accuracy_m": delivery.rider_accuracy_m if delivery else None,
             "location_at": delivery.rider_location_at.isoformat() if delivery and delivery.rider_location_at else None,
             "stale": rider_stale,
-            "route_polyline": delivery.route_polyline if delivery else None,
-            "route_distance_m": delivery.route_distance_m if delivery else None,
-            "route_duration_s": delivery.route_duration_s if delivery else None,
         },
         "delivery_status": delivery.status if delivery else None,
+        "next_stop": live_leg["next_stop"],
+        "remaining_distance_m": live_leg["remaining_distance_m"],
+        "remaining_duration_s": live_leg["remaining_duration_s"],
+        "route_polyline": live_leg["route_polyline"],
+        "route_distance_m": delivery.route_distance_m if delivery else None,
+        "route_duration_s": delivery.route_duration_s if delivery else None,
+        "maps_available": maps_available,
         "events": [
             {"event_type": e.event_type, "detail": e.detail, "created_at": e.created_at.isoformat()}
             for e in (order.events or [])

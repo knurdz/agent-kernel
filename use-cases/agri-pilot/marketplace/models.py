@@ -410,6 +410,7 @@ class Delivery(Base):
     route_distance_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
     route_duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     route_polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rider_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     rider_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     rider_heading: Mapped[float | None] = mapped_column(Float, nullable=True)

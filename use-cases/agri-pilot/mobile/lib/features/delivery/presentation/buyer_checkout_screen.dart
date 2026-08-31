@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/storage/handoff_pin_store.dart';
 import '../../../core/widgets/map_widgets.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/domain/models.dart';
@@ -74,6 +75,7 @@ class _BuyerCheckoutScreenState extends ConsumerState<BuyerCheckoutScreen> {
         deliveryLatitude: _deliveryPin?.latitude,
         deliveryLongitude: _deliveryPin?.longitude,
       );
+      await HandoffPinStore().save(result.order.id, result.handoffPin);
       if (!mounted) return;
       final statusMessage = result.order.status == 'searching_rider'
           ? 'We are finding a rider for your delivery.'

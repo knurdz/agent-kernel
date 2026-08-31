@@ -206,6 +206,7 @@ class _FarmerOrdersScreenState extends ConsumerState<FarmerOrdersScreen> {
                         final confirmedPickup = o.status == 'confirmed' && o.fulfillmentMode == 'pickup';
                         return _OrderListCard(
                           order: o,
+                          onTap: () => context.push('/orders/${o.id}/track'),
                           actions: [
                             if (pending)
                               FilledButton(

@@ -6,16 +6,46 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../network/dio_client.dart';
 
+typedef OrderDeepLinkHandler = void Function(int orderId);
+
 class PushService {
   PushService(this._dio);
   final Dio _dio;
   String? _fcmToken;
+  static OrderDeepLinkHandler? _orderDeepLinkHandler;
 
   static Future<void> initialize() async {
     try {
       await Firebase.initializeApp();
     } catch (e) {
       debugPrint('Firebase init skipped: $e');
+    }
+  }
+
+  static void registerOrderDeepLinkHandler(OrderDeepLinkHandler handler) {
+    _orderDeepLinkHandler = handler;
+  }
+
+  Future<void> listenForNavigation() async {
+    try {
+      FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        _handleDeliveryPayload(message.data);
+      });
+      final initial = await FirebaseMessaging.instance.getInitialMessage();
+      if (initial != null) {
+        _handleDeliveryPayload(initial.data);
+      }
+    } catch (e) {
+      debugPrint('FCM navigation listen skipped: $e');
+    }
+  }
+
+  void _handleDeliveryPayload(Map<String, dynamic> data) {
+    if (data['type'] != 'delivery_update') return;
+    final orderIdRaw = data['order_id'];
+    final orderId = orderIdRaw is int ? orderIdRaw : int.tryParse('$orderIdRaw');
+    if (orderId != null) {
+      _orderDeepLinkHandler?.call(orderId);
     }
   }
 

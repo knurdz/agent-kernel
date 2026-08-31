@@ -18,7 +18,7 @@ Durable memory: sessions and multimodal attachments are Redis-backed under Docke
 
 **Listing shop:** farmers can attach a **product photo** when creating or editing a listing (`POST /api/farmer/listings/{id}/photo`); images persist under `data/listing_media/` (Docker volume `listing-media`; override with `AGRIPILOT_LISTING_MEDIA_ROOT`). Listings support **category** (`vegetable|fruit|grain|spice|other`), optional **description**, and **harvest date**. Farmers manage stock, status, and view **analytics** (`GET /api/farmer/listings/{id}/analytics` — views, connection requests, orders, kg sold, revenue estimate). Buyers auto-browse all active listings (empty filters return the full feed); crop search uses case-insensitive substring match; optional `category` filter. Opening a listing detail increments `view_count`.
 
-**Rider delivery MVP:** a third **rider** account (self-registered with vehicle confirmation) can accept nearby delivery jobs after farmers mark orders ready. Buyers choose **pickup** or **delivery** on accepted connections; farmers confirm quantity and pickup pin; delivery orders enter rider search by weight + distance (no vehicle-type tiers). State changes are **deterministic REST** (`marketplace/order_service.py`, `marketplace/dispatch_service.py`); the agent only explains status via read-only `delivery_tools`. Maps use **OpenStreetMap** tiles in the mobile app (`flutter_map`, no API key) and optional **OSRM** road routing on the server (`marketplace/maps_service.py`, falls back to Haversine). Live tracking uses rider GPS posts + buyer/farmer polling; FCM notifies milestones. Payment stays cash/off-platform.
+**Rider delivery MVP:** a third **rider** account (self-registered with vehicle confirmation) can accept nearby delivery jobs after farmers mark orders ready. Buyers choose **pickup** or **delivery** on accepted connections; farmers confirm quantity and pickup pin; delivery orders enter rider search by weight + distance (no vehicle-type tiers). State changes are **deterministic REST** (`marketplace/order_service.py`, `marketplace/dispatch_service.py`, `marketplace/tracking_service.py`); the agent only explains status via read-only `delivery_tools`. Maps use **OpenStreetMap** tiles in the mobile app (`flutter_map`, no API key) and optional **OSRM** road routing on the server (`marketplace/maps_service.py`, falls back to Haversine). **Live order tracking** is a shared mobile screen for buyer, farmer, and rider: rider GPS posts every few seconds, all roles poll `GET .../orders/{id}/tracking` every 5s for rider position, remaining ETA, route polyline (refreshed on accept and pickup), party contact info, and event timeline; FCM deep-links open the tracking page. Payment stays cash/off-platform.
 
 ## Prerequisites
 
@@ -66,10 +66,12 @@ New API surfaces (mobile):
 | `GET` | `/api/buyer/listings/{id}/insights` | JWT buyer |
 | `POST` | `/api/buyer/orders` | JWT buyer |
 | `GET` | `/api/buyer/orders` | JWT buyer |
-| `GET` | `/api/buyer/orders/{id}/tracking` | JWT buyer |
+| `GET` | `/api/buyer/orders/{id}/tracking` | JWT buyer — live map payload (rider GPS, ETA, polyline, parties, events) |
+| `GET` | `/api/farmer/orders/{id}/tracking` | JWT farmer+active — same tracking payload as buyer |
 | `POST` | `/api/farmer/orders/{id}/confirm` | JWT farmer+active |
 | `POST` | `/api/farmer/orders/{id}/ready` | JWT farmer+active |
 | `GET/POST` | `/api/rider/jobs`, `/api/rider/online`, `/api/rider/location` | JWT rider |
+| `GET` | `/api/rider/orders/{id}/tracking` | JWT rider — same tracking payload |
 | `POST` | `/api/rider/jobs/{order_id}/accept` | JWT rider |
 
 Mobile rider setup: `flutter run --dart-define=API_BASE_URL=...` — no map API keys required. Signup role **Rider** requires the vehicle checkbox.
