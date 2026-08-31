@@ -1,17 +1,17 @@
 <p align="center">
-  <a href="../README.md">
+  <a href="../../README.md">
     <img src="../docs/branding/agripilot-icon.png" alt="AgriPilot logo" width="96" />
   </a>
 </p>
 
-<h2 align="center"><a href="../README.md">AgriPilot</a> Mobile</h2>
+<h2 align="center"><a href="../../README.md">AgriPilot</a> Mobile</h2>
 
 <p align="center">
   Android Flutter client — AI chat, marketplace, and live delivery for the AgriPilot platform
 </p>
 
 <p align="center">
-  <a href="../README.md"><strong>Project README</strong></a>
+  <a href="../../README.md"><strong>Project README</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile">Download APK</a>
   &nbsp;·&nbsp;
@@ -22,7 +22,7 @@
 
 ---
 
-Full project overview, architecture, VPS deployment, and API reference live in the parent [`README.md`](../README.md).
+Full project overview, architecture, VPS deployment, and API reference live in the repository [`README.md`](../../README.md).
 
 ## Prerequisites
 
@@ -91,7 +91,7 @@ Production uses HTTPS via Caddy on your VPS domain. **Do not** ship release APKs
 
 ### GitHub Actions (recommended)
 
-1. Deploy the backend (see parent [`README.md`](../README.md#production-vps-deployment))
+1. Deploy the backend (see [`README.md`](../../README.md#production-vps-deployment))
 2. Run **Actions → AgriPilot Mobile Release** with a `version` (e.g. `1.0.1`) and optional `api_base_url`
 3. Edit the draft release notes on GitHub, then publish
 4. Download the APK from [GitHub Releases](https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile)

@@ -1,244 +1,526 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/static/img/branding/agent-kernel-lockup-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/static/img/branding/agent-kernel-lockup-light.svg">
-    <img src="docs/static/img/branding/agent-kernel-lockup-dark.svg" alt="Agent Kernel" width="420" />
-  </picture>
+  <img src="use-cases/agri-pilot/docs/branding/agripilot-icon.png" alt="AgriPilot logo" width="160" />
 </p>
 
-<h3 align="center">The Operating System for Scalable &amp; Compliant Enterprise AI Agents</h3>
+<h1 align="center">AgriPilot</h1>
 
 <p align="center">
-  Run, orchestrate, and deploy production AI agents at scale — across frameworks and clouds — without lock-in, rewrites, or fragile glue code.
+  <strong>From crop diagnosis to doorstep delivery — an agentic platform for farmers, buyers, and riders</strong>
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/agentkernel/"><img src="https://img.shields.io/pypi/v/agentkernel.svg?color=blue&label=pypi" alt="PyPI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" alt="License: Apache 2.0"></a>
-  <a href="https://discord.gg/snrPzb46uu"><img src="https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/yaalalabs/agent-kernel/stargazers"><img src="https://img.shields.io/github/stars/yaalalabs/agent-kernel?style=social" alt="GitHub stars"></a>
+  AI advisory · Farmer marketplace · Live order tracking · Android, WhatsApp &amp; Telegram
 </p>
 
 <p align="center">
-  <a href="https://kernel.yaala.ai/docs">📖 Docs</a> •
-  <a href="#quick-start">🚀 Quick Start</a> •
-  <a href="#features">✨ Features</a> •
-  <a href="#deploy-anywhere">☁️ Deploy</a> •
-  <a href="https://discord.gg/snrPzb46uu">💬 Discord</a> •
-  <a href="DEVELOPER_GUIDE.md">🛠 Developer Guide</a>
+  <a href="https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+" /></a>
+  <a href="https://github.com/yaalalabs/agent-kernel"><img src="https://img.shields.io/badge/Built%20with-Agent%20Kernel-0066FF" alt="Agent Kernel" /></a>
+  <a href="https://langchain-ai.github.io/langgraph/"><img src="https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C" alt="LangGraph" /></a>
+  <a href="https://flutter.dev/"><img src="https://img.shields.io/badge/Mobile-Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter" /></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile"><strong>Download Android APK</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#quick-start">Quick start</a>
+  &nbsp;·&nbsp;
+  <a href="#features">Features</a>
+  &nbsp;·&nbsp;
+  <a href="#production-vps-deployment">VPS deploy</a>
+  &nbsp;·&nbsp;
+  <a href="use-cases/agri-pilot/docs/architecture/agripilot.architecture.html">Architecture</a>
+  &nbsp;·&nbsp;
+  <a href="use-cases/agri-pilot/mobile/README.md">Mobile dev</a>
+</p>
+
+<p align="center">
+  <em>Built with <a href="docs/AGENT_KERNEL_README.md">Agent Kernel</a> · <a href="https://kernel.yaala.ai/docs">Framework docs</a></em>
 </p>
 
 ---
 
-## Why Agent Kernel?
+AgriPilot helps farmers diagnose crop problems, manage sell listings and plant health, connect with buyers, and coordinate rider delivery — with an AI advisor on **Android**, **WhatsApp**, and **Telegram**. The backend is a [Agent Kernel](https://github.com/yaalalabs/agent-kernel) use-case using **LangGraph** multi-agent routing, a **Postgres** marketplace, and **Redis**-backed durable sessions.
 
-Most agent frameworks help you build a *prototype*. **Agent Kernel is the platform layer that gets you to production** — with the governance, portability, and operational maturity that enterprises actually require.
+[`AGENTS.md`](use-cases/agri-pilot/AGENTS.md) covers conventions for coding agents working in `use-cases/agri-pilot/`.
 
-|  | Agent Kernel |
-|---|---|
-| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
-| ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
-| 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; Kubernetes chart upcoming. |
-| 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
-| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
-| 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
-| 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
-| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol) and **A2A** (Agent-to-Agent) support. |
-| 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
+## Download the Android app
 
-> ⭐ **If Agent Kernel is solving real problems for you, please star the repo — it's the single best way to help us grow.**
+Release APKs are published as **draft** [GitHub Releases](https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile) by [`agripilot-mobile-release`](.github/workflows/agripilot-mobile-release.yaml).
+
+| Step | Action |
+|------|--------|
+| 1 | Download the latest `agripilot-*.apk` from [Releases](https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile) |
+| 2 | On your phone, allow install from your browser or files app |
+| 3 | Open the APK — the app talks to the production API baked in at build time |
+
+**Maintainers:** deploy the backend on a VPS (below), then run **Actions → AgriPilot Mobile Release**:
+
+| Input | Example | Notes |
+|-------|---------|-------|
+| `version` | `1.0.1` or `1.0.1+12` | Baked into the APK; does not modify `pubspec.yaml` |
+| `api_base_url` | `https://agripilot.knurdz.org` | Optional; defaults to production |
+
+The workflow runs tests, builds the APK, generates grouped release notes from mobile commits, and opens a **draft** release tagged `agripilot-mobile-v<version>`. Edit the notes on GitHub, then publish when ready.
+
+> Mobile release tags use the `agripilot-mobile-v*` prefix — separate from Agent Kernel PyPI publish tags (`v*`).
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-**Requirements:** Python 3.12 – 3.13.x
+### AI Advisor (all roles)
 
-```bash
-pip install agentkernel
+| Capability | Details |
+|------------|---------|
+| **Crop diagnosis** | Photo-based disease detection (HuggingFace ViT) with quality checks and confidence threshold |
+| **Treatment advice** | Agricultural RAG over ChromaDB (`data/chroma_db/`) with chemical/dosage safety validation |
+| **Weather & irrigation** | Open-Meteo forecasts — no API key required |
+| **Conversation memory** | Redis-backed sessions, case history, follow-up resolution (“it’s getting worse”) |
+| **Thread history** | Mobile chat threads via Agent Kernel thread routes |
+| **Safety backstops** | Supervisor handoff-loop guard + knowledge-agent treatment validation |
+
+The agent **explains** marketplace and delivery status but **never** creates orders, assigns riders, or mutates order state — those actions are REST-only in the mobile app.
+
+### Farmer
+
+- **Sell listings** — crop, quantity, price, category, description, harvest date, product photo, analytics (views, connections, revenue)
+- **Plant tracking** — tracked plants with photo timeline and derived insights
+- **Quick crop scan** — one-time ViT analysis without creating a plant
+- **Import plant to listing** — link tracked crop health to a sell listing for buyers
+- **Orders** — confirm quantity, mark ready, live tracking map
+- **Channels** — link WhatsApp or Telegram for advisor chat outside the app
+
+### Buyer
+
+- **Browse & match** — filter listings by crop, district, category, quantity, price; ranked match API
+- **Crop-health insights** — observation counts and diagnosis timeline on listings linked to tracked plants (no raw photos or chemical advice)
+- **Connections** — express interest; phone numbers revealed only after acceptance
+- **Checkout** — pickup or rider delivery; live order tracking with map, ETA, and rider GPS
+
+### Rider
+
+- **Self-register** with vehicle confirmation
+- **Go online** + share GPS to see nearby delivery jobs (weight + distance)
+- **Accept jobs** in the app; one active delivery at a time
+- **Live tracking** — post GPS every few seconds; OSM map tiles (no Google Maps API key)
+- **PIN handoff** — enter buyer PIN on the Deliveries tab at drop-off
+
+Payment is **cash/off-platform**. Maps use **OpenStreetMap** in the app and optional **OSRM** road routing on the server.
+
+---
+
+## Architecture
+
+<p align="center">
+  <a href="use-cases/agri-pilot/docs/architecture/agripilot.architecture.html">
+    <img src="use-cases/agri-pilot/docs/architecture/agripilot.architecture.png" alt="AgriPilot runtime architecture" width="900" />
+  </a>
+</p>
+
+<p align="center"><em>Click for the interactive diagram (Archify). Source: <code>use-cases/agri-pilot/docs/architecture/agripilot.architecture.json</code></em></p>
+
+**Runtime flow**
+
+1. **Clients** — Flutter Android (JWT), WhatsApp Cloud API, Telegram Bot API
+2. **Edge** — Caddy terminates HTTPS (Let’s Encrypt) on the VPS; only ports 80/443 are public
+3. **App** — Agent Kernel `RESTAPI` serves marketplace REST, authenticated mobile chat, and channel webhooks
+4. **Agents** — LangGraph supervisor routes to `vision`, `knowledge`, `resource`, and `delivery` specialists
+5. **Data** — PostgreSQL (marketplace/orders), Redis (sessions, attachments, threads), ChromaDB (RAG), on-disk plant/listing media
+
+Supervisor routing lives in [`use-cases/agri-pilot/agents/supervisor.py`](use-cases/agri-pilot/agents/supervisor.py). Marketplace order/dispatch logic is deterministic REST in `use-cases/agri-pilot/marketplace/order_service.py`, `dispatch_service.py`, and `tracking_service.py`.
+
+---
+
+## How Agent Kernel is used
+
+AgriPilot is an end-to-end use-case built **on top of** Agent Kernel — not a fork of the framework.
+
+### Package and extras
+
+```toml
+agentkernel[cli,langgraph,multimodal,chromadb,openai,api,whatsapp,telegram,redis,thread]>=0.8.1
 ```
 
-Build a multi-agent system that runs on OpenAI Agents SDK today and LangGraph tomorrow — same code:
+Defined in [`pyproject.toml`](use-cases/agri-pilot/pyproject.toml). Production Docker reinstalls monorepo `ak-py` because PyPI `0.8.1` predates `auth.authoriser` and mobile thread routes — see [`deploy/Dockerfile`](use-cases/agri-pilot/deploy/Dockerfile).
+
+### Entry points
+
+| File | Role |
+|------|------|
+| [`demo.py`](use-cases/agri-pilot/demo.py) | CLI — `LangGraphModule([triage_agent])` for local testing |
+| [`app.py`](use-cases/agri-pilot/app.py) | Production — REST + WhatsApp + Telegram + marketplace routers |
+
+`app.py` wiring:
 
 ```python
-from agentkernel.cli import CLI
-from agentkernel.openai import OpenAIModule
-from agents import Agent
+LangGraphModule([triage_agent])
 
-math_agent = Agent(
-    name="math",
-    handoff_description="Specialist agent for math questions",
-    instructions="You provide help with math problems.",
-)
+RESTAPI.add(auth_router)       # /api/auth, /api/farmer, /api/buyer, …
+RESTAPI.add(farmer_router)
+# … marketplace routers …
 
-general_agent = Agent(
-    name="general",
-    handoff_description="Agent for general questions",
-    instructions="You provide assistance with general queries.",
-)
-
-triage_agent = Agent(
-    name="triage",
-    instructions="You determine which agent to use based on the user's question.",
-    handoffs=[general_agent, math_agent],
-)
-
-module = OpenAIModule([triage_agent, math_agent, general_agent])
-
-if __name__ == "__main__":
-    CLI.main()
+RESTAPI.run([
+    AuthenticatedMobileChatHandler(),  # JWT + thread history
+    FastAckWhatsAppHandler(),
+    GatedTelegramHandler(),
+])
 ```
 
-That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module. 👉 [Get Started](https://kernel.yaala.ai/docs)
+### Multi-agent graph
+
+- **Supervisor** (`use-cases/agri-pilot/agents/supervisor.py`) — `langgraph_supervisor` triage with 20+ tools (marketplace, delivery, plan, profile)
+- **Vision** — ViT crop diagnosis from multimodal attachments
+- **Knowledge** — ChromaDB RAG + `validate_treatment` safety gate
+- **Resource** — Open-Meteo weather, irrigation, spray timing
+- **Delivery** — read-only order/dispatch explanations
+
+Tools are wrapped with `@guarded` (`use-cases/agri-pilot/tools/tool_guard.py`) — per-session call limits and timeouts.
+
+### Sessions and identity
+
+| Channel | Session key | Notes |
+|---------|-------------|-------|
+| Mobile | `agri:user:{user_id}` | JWT via `AuthenticatedMobileChatHandler` + `MarketplaceJwtAuthoriser` |
+| WhatsApp | Sender `wa_id` (E.164) | Farmer + active subscription gate |
+| Telegram | `chat_id` | Linked via contact-share to `users.telegram_chat_id` |
+
+Config in [`config.yaml`](use-cases/agri-pilot/config.yaml); override with `AK_*` env vars (`AK_SESSION__TYPE=redis`, etc.). Docker and VPS use Redis for sessions, multimodal attachments, and conversation threads.
+
+### Guardrails
+
+- OpenAI moderation/jailbreak via `guardrails_input.json` / `guardrails_output.json`
+- Code-level backstops: `agents/supervisor_guardrails.py`, `agents/knowledge_guardrails.py`
+- WhatsApp/Telegram hard gates block non-farmer or inactive accounts before any LLM call
 
 ---
 
-## ✨ Features
+## Quick start
 
-### 🧩 Works with the Frameworks You Already Use
+### Prerequisites
 
-<p align="center">
-  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <i>Smol Agents (soon)</i> &nbsp;•&nbsp; <i>LiveKit (soon)</i>
-</p>
+- Python `>=3.12`, [`uv`](https://github.com/astral-sh/uv)
+- One LLM key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`
+- For production channels: WhatsApp and/or Telegram credentials (see below)
+- For marketplace JWT: `AK_MARKETPLACE__JWT_SECRET` (≥32 chars in prod)
 
-No rewrites. No re-learning. Bring your agents — Agent Kernel handles the platform layer.
-
-### 🛡️ Compliance & Governance — First-Class, Not an Afterthought
-
-Enterprises can't ship agents they can't audit. Agent Kernel makes compliance the default:
-
-- **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
-- **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
-- **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
-- **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
-- **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
-
-### 📦 Sandboxed Code Execution
-
-Let agents run code and shell commands in an isolated, permission-bounded environment — the platform handles it, your agent code stays clean.
-
-- **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
-- **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance) today, with `kubernetes` and other cloud-native backends planned; bring your own via a dotted path.
-- **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
-- **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
-
-[Learn more →](https://kernel.yaala.ai/docs/advanced/sandbox)
-
-### 🧠 Memory, Sessions & Knowledge Bases
-
-| Layer | Backends |
-|---|---|
-| **Session / Memory** | In-memory, Redis, Valkey (AWS), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
-| **Conversation Threads** | Persistent, named threads keyed by `session_id` — in-memory, Redis, Valkey, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
-| **Vector Knowledge** | ChromaDB |
-| **Graph Knowledge** | Neo4j |
-| **SQL Analytics** | Starburst Galaxy (Trino) |
-| **Custom** | Pluggable `KnowledgeBase` interface — bring any backend |
-
-### 💬 Messaging Channels — Out of the Box
-
-Slack • WhatsApp • Microsoft Teams • Telegram • Gmail • Messenger • Instagram
-
-Build once. Ship to every channel your users live on. No bespoke bot code.
-
-### 🔌 Open Protocols
-
-- **MCP (Model Context Protocol)** — Connect agents to external tools, data sources, and services. Optionally expose your agents *as* MCP tools.
-- **A2A (Agent-to-Agent)** — Native message passing, handoffs, and coordination between agents in a shared ecosystem.
-
-### ⚡ Built-In Execution Modes
-
-- **Synchronous** — Classic request/response.
-- **WebSocket / Async** — Streaming, long-running, real-time agent interactions.
-- **Stateless MCP** — Lightweight agent-as-tool deployments.
-
----
-
-## ☁️ Deploy Anywhere
-
-Same agent code. Pick your runtime. Full Terraform modules included.
-
-| Cloud | Serverless | Containerized |
-|---|---|---|
-| **AWS** | [Lambda](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) | [ECS / Fargate](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) |
-| **Azure** | [Functions](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) | [Container Apps](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) |
-| **GCP** | [Cloud Run Serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/serverless) | [Cloud Run Containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized) |
-| **On-Prem** | ✅ Docker image | ✅ REST API bundle |
-
----
-
-## 🛠 Agent Skills — Supercharge Your Coding Assistant
-
-Install Agent Kernel skills and Claude, Copilot, Cursor, or Windsurf become experts at building production agents — no hallucinated APIs.
+### Local backend (Docker)
 
 ```bash
-ak skill install
+cd use-cases/agri-pilot
+cp .env.local.example .env.local   # fill at least one LLM key
+./build.sh
+docker compose up --build          # Postgres + Redis + API on :8000
+curl http://localhost:8000/health  # {"status":"ok"}
 ```
 
-| Skill | What it does |
-|---|---|
-| `ak-init` | Scaffold a new project — any framework, any deployment mode |
-| `ak-build` | Add tools, agents, handoffs — context-aware and framework-specific |
-| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, hooks, multimodal, conversation threads |
-| `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
-| `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
-| `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |
-
-See the [`use-cases/`](use-cases/) directory for complete end-to-end examples built using these skills — each starting from a `SPEC.md` and generating a fully deployed agent.
-
----
-
-## 🧪 Testing — pytest-Integrated
+### Local backend (bare metal)
 
 ```bash
-pytest tests/
+cd use-cases/agri-pilot
+cp .env.local.example .env.local
+./build.sh
+uv run python app.py               # needs Postgres for marketplace
+# or CLI only:
+python demo.py
 ```
 
-Built-in fuzzy, semantic, and fallback comparison modes. CI/CD ready. Test agent behavior, not just code.
+### Tests
+
+```bash
+OPENAI_API_KEY=sk-dummy uv run pytest -m "not slow"
+```
+
+Run from `use-cases/agri-pilot/` — repo-root pytest collects the whole monorepo.
+
+### Android app (dev)
+
+```bash
+cd use-cases/agri-pilot/mobile
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000   # emulator → host Docker
+```
+
+See [`use-cases/agri-pilot/mobile/README.md`](use-cases/agri-pilot/mobile/README.md) for Firebase push (optional) and physical-device LAN URLs.
 
 ---
 
-## 👥 Who's It For?
+## Production VPS deployment
 
-- **AI Startups** — Go from prototype to production in days, not quarters.
-- **Software Product Companies** — Add intelligent agents to your SaaS without framework lock-in.
-- **Software Services Companies** — Ship client agent solutions in weeks, not months.
-- **Domain Experts** — Build production AI products without a full platform engineering team.
-- **Regulated Enterprises** — Get compliance, traceability, and data residency by default.
+Production stack: **Caddy** (automatic HTTPS) → **app** (Agent Kernel REST + agent runner) → **Postgres 16** + **Redis 7** on a private Docker network. Only Caddy is public.
+
+### Prerequisites
+
+- Ubuntu 22.04 or 24.04 VPS with SSH
+- DNS `A`/`AAAA` for your domain pointing at the VPS **before** first deploy
+- Firewall: inbound **22**, **80**, **443** only
+- Meta WhatsApp Cloud API + Telegram bot credentials (if using channels)
+- One LLM provider API key
+
+### One-command deploy (fresh VPS)
+
+```bash
+export REPO_URL=https://github.com/yaalalabs/agent-kernel.git
+export BRANCH=main
+export INSTALL_DIR=/opt/agent-kernel
+
+curl -fsSL https://raw.githubusercontent.com/yaalalabs/agent-kernel/main/use-cases/agri-pilot/deploy/deploy-vps.sh \
+  | bash -s -- setup
+
+# Edit deploy/.env.production on the server, then:
+bash /opt/agent-kernel/use-cases/agri-pilot/deploy/deploy-vps.sh deploy
+```
+
+Or clone first:
+
+```bash
+git clone --branch main https://github.com/yaalalabs/agent-kernel.git /opt/agent-kernel
+cd /opt/agent-kernel/use-cases/agri-pilot
+cp deploy/.env.production.example deploy/.env.production
+chmod 600 deploy/.env.production
+# fill DOMAIN, LLM, WhatsApp, Telegram, and strong secrets
+./deploy/deploy-vps.sh deploy
+```
+
+First `./deploy/deploy-vps.sh setup` generates strong JWT/Postgres/WhatsApp-verify/Telegram-webhook secrets into `deploy/.env.production` (mode `600`). The script never prints secret values and never overwrites an existing populated env file.
+
+### Update workflow
+
+```bash
+cd /opt/agent-kernel/use-cases/agri-pilot
+git pull --ff-only origin main
+./deploy/deploy-vps.sh update
+```
+
+`update` rebuilds the app image, runs `alembic upgrade head`, and probes `https://<DOMAIN>/health`. Named volumes (Postgres, Redis, Caddy certs, Chroma cache, plant-media, listing-media) are retained.
+
+Without git on the server:
+
+```bash
+DEPLOY_SKIP_GIT=1 ./deploy/deploy-vps.sh update
+```
+
+After deploy, trigger **Actions → AgriPilot Mobile Release** with your version and API URL, or build locally:
+
+```bash
+cd use-cases/agri-pilot/mobile
+flutter build apk --release --dart-define=API_BASE_URL=https://<DOMAIN>
+```
+
+### Operations
+
+| Command | Purpose |
+|---------|---------|
+| `./deploy/deploy-vps.sh deploy` | Full deploy (build, migrate, start, verify) |
+| `./deploy/deploy-vps.sh update` | Same as deploy |
+| `./deploy/deploy-vps.sh status` | Container status + public `/health` probe |
+| `./deploy/deploy-vps.sh logs [service]` | Follow logs (`db`, `redis`, `app`, `caddy`, …) |
+| `./deploy/deploy-vps.sh restart` | Restart app + Caddy |
+| `./deploy/deploy-vps.sh backup` | Timestamped Postgres dump under `deploy/backups/` |
+| `./deploy/deploy-vps.sh restore <file.sql.gz>` | Destructive DB restore (requires typing `restore`) |
+| `./deploy/validate-deploy.sh` | Compose config validation |
+| `./deploy/validate-deploy.sh --smoke` | Local build + migration + `/health` without Caddy |
+
+### Webhooks
+
+After deploy, the script registers Telegram (`https://<DOMAIN>/telegram/webhook`). WhatsApp Meta console (manual):
+
+- Callback URL: `https://<DOMAIN>/whatsapp/webhook`
+- Verify token: `AK_WHATSAPP__VERIFY_TOKEN`
+- Subscribe to `messages`
+
+### Deploy files
+
+| Path | Role |
+|------|------|
+| [`deploy/docker-compose.vps.yml`](use-cases/agri-pilot/deploy/docker-compose.vps.yml) | Production Compose stack |
+| [`deploy/Caddyfile`](use-cases/agri-pilot/deploy/Caddyfile) | Automatic HTTPS reverse proxy |
+| [`deploy/Dockerfile`](use-cases/agri-pilot/deploy/Dockerfile) | Hardened app image (non-root, baked knowledge ingest) |
+| [`deploy/.env.production.example`](use-cases/agri-pilot/deploy/.env.production.example) | Documented env template |
+| [`deploy/deploy-vps.sh`](use-cases/agri-pilot/deploy/deploy-vps.sh) | Idempotent deploy + operations |
 
 ---
 
-## 🌐 Affiliations
+## Configuration
 
-Agent Kernel is proud to be:
+`demo.py` calls `load_dotenv(".env.local")` **before** importing `agentkernel` — keep that order in new entrypoints. `AK_` env vars override `config.yaml` with `__` nesting.
 
-- A member of the [Linux Foundation](https://www.linuxfoundation.org)
-- A member of the [Agentic AI Foundation](https://aaif.io)
+Key knobs (see [`.env.local.example`](use-cases/agri-pilot/.env.local.example)):
+
+| Var | Purpose |
+|-----|---------|
+| `AK_MARKETPLACE__DATABASE_URL` | `postgresql+psycopg://...` (compose wires `db` service) |
+| `AK_SESSION__TYPE` / `AK_SESSION__REDIS__URL` | Redis session store (compose sets `redis`) |
+| `AK_MULTIMODAL__STORAGE_TYPE` / `AK_MULTIMODAL__REDIS__URL` | Redis attachment storage |
+| `AK_THREAD__TYPE` / `AK_THREAD__REDIS__URL` | Conversation thread store (mobile history) |
+| `AK_MARKETPLACE__JWT_SECRET` | HS256 secret (≥32 chars in prod) |
+| `AK_WHATSAPP__*` / `AK_TELEGRAM__*` | Messaging channel credentials |
+| `AGRIPILOT_TOOL_MAX_CALLS` / `AGRIPILOT_TOOL_TIMEOUT_SECONDS` | Tool guard limits |
+| `AGRIPILOT_PLANT_MEDIA_ROOT` / `AGRIPILOT_LISTING_MEDIA_ROOT` | On-disk media roots |
 
 ---
 
-## 💬 Community & Support
+## Marketplace roles & auth
 
-- 📖 **Documentation:** [kernel.yaala.ai/docs](https://kernel.yaala.ai/docs)
-- 💬 **Discord:** [Join the community](https://discord.gg/snrPzb46uu)
-- 🐛 **Issues:** [GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
-- 📦 **PyPI:** [`pip install agentkernel`](https://pypi.org/project/agentkernel/)
-- ☁️ **Terraform Registry:** [Official modules](https://registry.terraform.io/modules/yaalalabs)
-- 🛠 **Developer Guide:** [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
-- 🤖 **Contributing with AI agents:** [AGENTS.md](AGENTS.md)
+- **Roles:** `farmer` (sells, WhatsApp+REST), `buyer` (JWT-only browse/connect), `rider` (delivery), `admin` via `scripts/seed_admin.py`
+- **Phone:** E.164 `^\+[1-9]\d{7,14}$`
+- **JWT:** `Authorization: Bearer <token>` on protected routes
+- **Subscription:** Farmer `active` required for `/api/farmer/*`; WhatsApp/Telegram gate matches
+
+### Quickstart (curl)
+
+```bash
+BASE=http://localhost:8000
+
+# Farmer signup + login
+curl -s $BASE/api/auth/signup -H 'Content-Type: application/json' \
+  -d '{"role":"farmer","phone_number":"+94770000001","password":"secret123","name":"Amal","district":"Kandy"}'
+curl -s $BASE/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"phone_number":"+94770000001","password":"secret123"}'
+F_TOKEN=<jwt>
+
+# Buyer signup + login
+curl -s $BASE/api/auth/signup -H 'Content-Type: application/json' \
+  -d '{"role":"buyer","phone_number":"+94770000002","password":"secret123","name":"Nimal","district":"Colombo"}'
+B_TOKEN=<jwt from login>
+
+# Farmer listing
+curl -s $BASE/api/farmer/listings -H "Authorization: Bearer $F_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"crop":"tomato","quantity_kg":500,"price_per_kg":120}'
+```
+
+---
+
+## API reference
+
+### Agent Kernel defaults
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `GET` | `/health` | none | `{"status":"ok"}` |
+| `GET` | `/openapi.json`, `/docs`, `/redoc` | none | FastAPI docs |
+| `GET` | `/api/v1/agents` | none | list (`triage`) |
+| `POST` | `/api/v1/chat` | JWT (mobile) / none (dev) | `{"prompt","session_id","agent":"triage"}` |
+| `POST` | `/api/v1/chat-multipart` | JWT (mobile) | multipart photos (10 MB limit) |
+| `GET` | `/api/v1/threads*` | JWT | Mobile chat history |
+| `GET` | `/whatsapp/webhook?hub.*` | verify token | Meta challenge |
+| `POST` | `/whatsapp/webhook` | signature + farmer gate | fast-ack |
+| `POST` | `/telegram/webhook` | secret token + farmer gate | fast-ack |
+
+### Mobile API surfaces
+
+| Method | Path | Auth |
+|--------|------|------|
+| `PATCH` | `/api/auth/me` | JWT |
+| `GET` | `/api/auth/me/channels` | JWT |
+| `POST` | `/api/auth/me/channels/telegram/link-token` | JWT farmer |
+| `DELETE` | `/api/auth/me/channels/telegram` | JWT farmer |
+| `GET` | `/api/config/public` | public |
+| `POST/DELETE` | `/api/devices/register`, `/unregister` | JWT |
+| `GET/PATCH` | `/api/devices/notification-preferences` | JWT |
+| `POST` | `/api/farmer/scans` | JWT farmer+active |
+| `GET/POST` | `/api/farmer/plants*` | JWT farmer+active |
+| `POST` | `/api/farmer/listings/{id}/import-plant` | JWT farmer+active |
+| `GET` | `/api/buyer/listings/{id}/insights` | JWT buyer |
+| `POST` | `/api/buyer/orders` | JWT buyer |
+| `GET` | `/api/buyer/orders/{id}/tracking` | JWT buyer |
+| `GET` | `/api/farmer/orders/{id}/tracking` | JWT farmer+active |
+| `POST` | `/api/farmer/orders/{id}/confirm`, `/ready` | JWT farmer+active |
+| `GET/POST` | `/api/rider/jobs`, `/api/rider/online`, `/api/rider/location` | JWT rider |
+| `POST` | `/api/rider/jobs/{order_id}/accept` | JWT rider |
+
+### Marketplace REST (selected)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/auth/signup` | public | Register farmer/buyer/rider |
+| `POST` | `/api/auth/login` | public | JWT access token |
+| `GET` | `/api/auth/me` | JWT | Profile + subscription |
+| `POST/GET/PATCH/DELETE` | `/api/farmer/listings*` | farmer+active | CRUD + photo + analytics |
+| `GET/PATCH` | `/api/farmer/connections*` | farmer+active | Inbox + accept/decline |
+| `GET` | `/api/farmer/connections/{id}/contact` | farmer+active | Buyer phone after accepted |
+| `GET` | `/api/buyer/listings*` | buyer | Browse + filters |
+| `GET` | `/api/buyer/match` | buyer | Ranked match by crop/qty/district |
+| `POST` | `/api/buyer/listings/{id}/connect` | buyer | Connection request |
+| `GET` | `/api/buyer/connections/{id}/contact` | buyer | Farmer phone after accepted |
+
+Errors: `401` invalid JWT, `403` role/subscription, `404` not found, `409` duplicate, `422` validation.
+
+### Chat marketplace tools
+
+Bound to the supervisor via `use-cases/agri-pilot/tools/marketplace_tools.py` and `use-cases/agri-pilot/tools/delivery_tools.py` — all `@guarded`. Examples:
+
+- Farmer: “I have 500kg tomatoes at 120/kg” → `create_listing_tool`
+- Buyer: “Find 200kg tomato near Kandy” → `match_listings_tool`
+- Rider: “What jobs are nearby?” → `nearby_delivery_jobs_tool`
+
+Orders are placed and riders accept jobs **only in the mobile app**, not via chat.
+
+### Conversation continuity
+
+Under Docker the same `session_id` survives restarts — sessions, attachments, and case history live in Redis:
+
+```bash
+curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' \
+  -d '{"prompt":"My tomato plants have early blight in Kandy.","session_id":"farmer-1"}'
+docker compose restart app
+curl -s $BASE/api/v1/chat -H 'Content-Type: application/json' \
+  -d '{"prompt":"It is getting worse. What should I do?","session_id":"farmer-1"}'
+# -> references tomato / early blight without re-asking
+```
+
+---
+
+## WhatsApp setup
+
+1. Fill `AK_WHATSAPP__ACCESS_TOKEN`, `PHONE_NUMBER_ID`, `VERIFY_TOKEN` in `.env.local`
+2. Start: `uv run python app.py` or `docker compose up --build`
+3. Expose with ngrok for dev: `ngrok http 8000`
+4. Meta console → callback `https://<host>/whatsapp/webhook`, subscribe `messages`
+5. Only `farmer` + `subscription_status=active` accounts reach the agent
+
+## Telegram setup
+
+1. Create bot via `@BotFather` → `AK_TELEGRAM__BOT_TOKEN` + `AK_TELEGRAM__WEBHOOK_SECRET`
+2. Register webhook: `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<host>/telegram/webhook&secret_token=<SECRET>`
+3. Unlinked chats get a contact-share keyboard; only active farmers link via phone match
+
+---
+
+## Weather & knowledge
+
+- Weather: [Open-Meteo](https://open-meteo.com) — no API key
+- After editing `data/knowledge_docs/`: `uv run python scripts/ingest_knowledge.py`
+
+## Database
+
+Postgres-only runtime; schema via Alembic (`migrations/`). `app.py` runs migrations at startup. Tests use in-memory SQLite fixtures — no Docker required for pytest.
+
+---
+
+## Project layout
+
+```
+use-cases/agri-pilot/
+├── agents/           # LangGraph supervisor + specialists
+├── tools/            # Vision, RAG, weather, marketplace, delivery, guard
+├── marketplace/      # Postgres models, routers, order/dispatch services
+├── mobile/           # Flutter Android client
+├── mobile_api/       # JWT-authenticated chat handler
+├── deploy/           # VPS Docker stack + deploy-vps.sh
+├── use-cases/agri-pilot/docs/architecture/ # Archify runtime diagram (JSON, HTML, PNG)
+├── app.py            # Production entry point
+├── demo.py           # CLI entry point
+└── config.yaml       # Agent Kernel config defaults
+```
 
 ---
 
 ## License
 
-Unless otherwise specified, all content — including all source and documentation files in this repository — is:
-
-Copyright (c) 2025-2026 Yaala Labs.
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
-
-SPDX-License-Identifier: Apache-2.0
+<p align="center">
+  <img src="use-cases/agri-pilot/docs/branding/agripilot-icon.png" alt="AgriPilot" width="48" /><br/>
+  <strong>AgriPilot</strong><br/>
+  Built with <a href="docs/AGENT_KERNEL_README.md">Agent Kernel</a> · See <code>LICENSE</code>.
+</p>
