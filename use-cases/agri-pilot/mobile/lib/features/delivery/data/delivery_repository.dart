@@ -99,8 +99,17 @@ class DeliveryRepository {
     await _dio.post('/api/rider/jobs/$orderId/reject');
   }
 
-  Future<Map<String, dynamic>> acceptJob(int orderId) async {
-    final resp = await _dio.post('/api/rider/jobs/$orderId/accept');
+  Future<Map<String, dynamic>> acceptJob(
+    int orderId, {
+    double? latitude,
+    double? longitude,
+    double? accuracyM,
+  }) async {
+    final resp = await _dio.post('/api/rider/jobs/$orderId/accept', data: {
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (accuracyM != null) 'accuracy_m': accuracyM,
+    });
     return resp.data as Map<String, dynamic>;
   }
 

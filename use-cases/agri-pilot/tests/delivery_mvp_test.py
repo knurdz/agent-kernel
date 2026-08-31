@@ -417,6 +417,47 @@ def test_farmer_confirm_delivery_dispatches_stuck_order():
     db.close()
 
 
+def test_rider_accept_with_location_in_request_body():
+    client, Session = _app_client()
+    db = Session()
+    _, buyer, rider, listing = _seed_marketplace_district_only(db)
+    rp = db.get(RiderProfile, rider.id)
+    rp.latitude = None
+    rp.longitude = None
+    rp.last_location_at = None
+    db.commit()
+    buyer_phone = buyer.phone_number
+    rider_phone = rider.phone_number
+    listing_id = listing.id
+    db.close()
+
+    buyer_tok = _token(client, buyer_phone)
+    order_resp = client.post(
+        "/api/buyer/orders",
+        headers={"Authorization": f"Bearer {buyer_tok}"},
+        json={
+            "listing_id": listing_id,
+            "quantity_kg": 50,
+            "fulfillment_mode": "delivery",
+            "delivery_address_label": "Colombo shop",
+            "delivery_latitude": 6.93,
+            "delivery_longitude": 79.85,
+        },
+    )
+    assert order_resp.status_code == 201, order_resp.text
+    order_id = order_resp.json()["order"]["id"]
+
+    rider_tok = _token(client, rider_phone)
+    client.post("/api/rider/online", headers={"Authorization": f"Bearer {rider_tok}"}, json={"online": True})
+    accept = client.post(
+        f"/api/rider/jobs/{order_id}/accept",
+        headers={"Authorization": f"Bearer {rider_tok}"},
+        json={"latitude": 7.28, "longitude": 80.62},
+    )
+    assert accept.status_code == 200, accept.text
+    assert accept.json()["status"] == "assigned"
+
+
 def test_concurrent_rider_accept_only_one_wins():
     _, Session = _app_client()
     db = Session()

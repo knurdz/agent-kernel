@@ -12,6 +12,57 @@ import '../../auth/providers/auth_provider.dart';
 import '../../connections/presentation/connections_screen.dart';
 import '../data/delivery_repository.dart';
 
+class _OrderListCard extends StatelessWidget {
+  const _OrderListCard({
+    required this.order,
+    this.onTap,
+    this.actions = const [],
+  });
+
+  final OrderItem order;
+  final VoidCallback? onTap;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final content = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${order.crop} · ${order.quantityKg.toStringAsFixed(0)} kg',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              StatusChip(status: order.status),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('${order.fulfillmentMode} · ${orderStatusLabel(order.status)}'),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: actions,
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+    );
+  }
+}
+
 class InboxScreen extends ConsumerWidget {
   const InboxScreen({super.key});
 
@@ -153,49 +204,22 @@ class _FarmerOrdersScreenState extends ConsumerState<FarmerOrdersScreen> {
                         final o = _orders[i];
                         final pending = o.status == 'pending_farmer_confirmation';
                         final confirmedPickup = o.status == 'confirmed' && o.fulfillmentMode == 'pickup';
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${o.crop} · ${o.quantityKg.toStringAsFixed(0)} kg',
-                                        style: Theme.of(context).textTheme.titleMedium,
-                                      ),
-                                    ),
-                                    StatusChip(status: o.status),
-                                  ],
+                        return _OrderListCard(
+                          order: o,
+                          actions: [
+                            if (pending)
+                              FilledButton(
+                                onPressed: () => _confirm(o),
+                                child: Text(
+                                  o.fulfillmentMode == 'delivery' ? 'Confirm & dispatch' : 'Confirm order',
                                 ),
-                                const SizedBox(height: 4),
-                                Text('${o.fulfillmentMode} · ${orderStatusLabel(o.status)}'),
-                                if (pending || confirmedPickup) ...[
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      if (pending)
-                                        FilledButton(
-                                          onPressed: () => _confirm(o),
-                                          child: Text(
-                                            o.fulfillmentMode == 'delivery' ? 'Confirm & dispatch' : 'Confirm order',
-                                          ),
-                                        ),
-                                      if (confirmedPickup)
-                                        FilledButton(
-                                          onPressed: () => _markReady(o),
-                                          child: const Text('Mark ready'),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
+                              ),
+                            if (confirmedPickup)
+                              FilledButton(
+                                onPressed: () => _markReady(o),
+                                child: const Text('Mark ready'),
+                              ),
+                          ],
                         );
                       },
                     ),
@@ -257,13 +281,9 @@ class _BuyerOrdersScreenState extends ConsumerState<BuyerOrdersScreen> {
                       itemCount: _orders.length,
                       itemBuilder: (_, i) {
                         final o = _orders[i];
-                        return Card(
-                          child: ListTile(
-                            title: Text('${o.crop} · ${o.quantityKg.toStringAsFixed(0)} kg'),
-                            subtitle: Text('${o.fulfillmentMode} · ${orderStatusLabel(o.status)}'),
-                            trailing: StatusChip(status: o.status),
-                            onTap: () => context.push('/orders/${o.id}/track'),
-                          ),
+                        return _OrderListCard(
+                          order: o,
+                          onTap: () => context.push('/orders/${o.id}/track'),
                         );
                       },
                     ),

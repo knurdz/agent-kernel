@@ -565,6 +565,14 @@ class RiderOnlineUpdate(BaseModel):
     online: bool
 
 
+class RiderJobAccept(BaseModel):
+    """Optional GPS snapshot when accepting — updates rider location before assignment."""
+
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    accuracy_m: Optional[float] = None
+
+
 class DeliveryStatusUpdate(BaseModel):
     status: Literal["en_route_pickup", "arrived_pickup", "picked_up", "in_transit", "delivered"]
 

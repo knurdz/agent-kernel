@@ -34,7 +34,7 @@ String? normalizePhoneToE164(String input) {
 String? validatePhone(String phone) {
   if (phone.trim().isEmpty) return 'Phone number is required.';
   if (normalizePhoneToE164(phone) == null) {
-    return 'Enter a valid number, e.g. 077 123 4567 or +94771234567.';
+    return 'Enter a valid phone number.';
   }
   return null;
 }

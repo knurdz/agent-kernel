@@ -26,6 +26,7 @@ from marketplace.schemas import (
     DeliveryStatusUpdate,
     HandoffConfirm,
     OrderResponse,
+    RiderJobAccept,
     RiderJobOut,
     RiderLocationUpdate,
     RiderOnlineUpdate,
@@ -84,8 +85,21 @@ def reject(order_id: int, db: Session = Depends(get_db), rider: User = Depends(_
 
 
 @router.post("/jobs/{order_id}/accept")
-def accept(order_id: int, db: Session = Depends(get_db), rider: User = Depends(_rider)):
+def accept(
+    order_id: int,
+    payload: RiderJobAccept = RiderJobAccept(),
+    db: Session = Depends(get_db),
+    rider: User = Depends(_rider),
+):
     try:
+        if payload.latitude is not None and payload.longitude is not None:
+            update_rider_location(
+                db,
+                rider,
+                payload.latitude,
+                payload.longitude,
+                accuracy_m=payload.accuracy_m,
+            )
         delivery = accept_job(db, rider, order_id)
         order = get_order(db, order_id)
         if order:

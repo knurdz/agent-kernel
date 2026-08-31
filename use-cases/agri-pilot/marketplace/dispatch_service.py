@@ -225,7 +225,7 @@ def accept_job(db: Session, rider: User, order_id: int) -> Delivery:
 
     rp = _get_or_create_rider_profile(db, rider)
     if not rp.is_online or not valid_coordinate(rp.latitude, rp.longitude):
-        raise ValueError("rider must be online with valid location")
+        raise ValueError("rider must be online with valid location — enable GPS and try again")
 
     stale_seconds = get_location_stale_seconds()
     if rp.last_location_at and (_utcnow() - _as_utc(rp.last_location_at)).total_seconds() > stale_seconds:
@@ -239,11 +239,17 @@ def accept_job(db: Session, rider: User, order_id: int) -> Delivery:
     if not delivery or delivery.status != DeliveryStatus.searching.value or delivery.rider_id is not None:
         raise ValueError("job already assigned")
 
+    dest_lat = order.delivery_latitude
+    dest_lon = order.delivery_longitude
+    if not valid_coordinate(dest_lat, dest_lon):
+        dest_lat = order.pickup_latitude
+        dest_lon = order.pickup_longitude
+
     route = estimate_route(
         order.pickup_latitude,
         order.pickup_longitude,
-        order.delivery_latitude,
-        order.delivery_longitude,
+        dest_lat,
+        dest_lon,
     )
 
     now = _utcnow()

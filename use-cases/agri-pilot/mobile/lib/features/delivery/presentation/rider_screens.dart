@@ -41,15 +41,54 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
     await _refresh();
   }
 
+  Future<Position?> _captureRiderPosition({bool required = false}) async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (required && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission is required to accept delivery jobs')),
+          );
+        }
+        return null;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (required && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Turn on location services to accept delivery jobs')),
+          );
+        }
+        return null;
+      }
+      return await Geolocator.getCurrentPosition();
+    } catch (_) {
+      if (required && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read GPS. Try again outdoors with location enabled')),
+        );
+      }
+      return null;
+    }
+  }
+
+  Future<void> _postRiderPosition(Position pos) async {
+    await ref.read(deliveryRepositoryProvider).postLocation(
+          pos.latitude,
+          pos.longitude,
+          accuracy: pos.accuracy,
+        );
+  }
+
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
       if (_online) {
-        try {
-          final pos = await Geolocator.getCurrentPosition();
-          await ref.read(deliveryRepositoryProvider).postLocation(pos.latitude, pos.longitude, accuracy: pos.accuracy);
-        } catch (_) {
-          // Location optional for nationwide job listing.
+        final pos = await _captureRiderPosition();
+        if (pos != null) {
+          await _postRiderPosition(pos);
         }
       }
       final jobs = await ref.read(deliveryRepositoryProvider).availableJobs();
@@ -68,6 +107,10 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
       await ref.read(deliveryRepositoryProvider).setOnline(v);
       setState(() => _online = v);
       if (v) {
+        final pos = await _captureRiderPosition(required: true);
+        if (pos != null) {
+          await _postRiderPosition(pos);
+        }
         _tracker = RiderLocationTracker(
           onLocation: (lat, lon, heading, accuracy) =>
               ref.read(deliveryRepositoryProvider).postLocation(lat, lon, heading: heading, accuracy: accuracy),
@@ -86,13 +129,22 @@ class _RiderJobsScreenState extends ConsumerState<RiderJobsScreen> {
 
   Future<void> _accept(int orderId) async {
     try {
-      await ref.read(deliveryRepositoryProvider).acceptJob(orderId);
+      final pos = await _captureRiderPosition(required: true);
+      if (pos == null) return;
+      await ref.read(deliveryRepositoryProvider).acceptJob(
+            orderId,
+            latitude: pos.latitude,
+            longitude: pos.longitude,
+            accuracyM: pos.accuracy,
+          );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Job accepted')));
         await _refresh();
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+      }
     }
   }
 
@@ -254,16 +306,25 @@ class _RiderActiveDeliveryScreenState extends ConsumerState<RiderActiveDeliveryS
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (status == 'assigned')
+                if (status == 'assigned') ...[
                   FilledButton(onPressed: () => _advance('en_route_pickup'), child: const Text('Start to pickup')),
-                if (status == 'en_route_pickup')
+                  const SizedBox(height: 12),
+                ],
+                if (status == 'en_route_pickup') ...[
                   FilledButton(onPressed: () => _advance('arrived_pickup'), child: const Text('Arrived at pickup')),
-                if (status == 'arrived_pickup')
+                  const SizedBox(height: 12),
+                ],
+                if (status == 'arrived_pickup') ...[
                   FilledButton(onPressed: () => _advance('picked_up'), child: const Text('Picked up')),
-                if (status == 'picked_up')
+                  const SizedBox(height: 12),
+                ],
+                if (status == 'picked_up') ...[
                   FilledButton(onPressed: () => _advance('in_transit'), child: const Text('In transit to buyer')),
+                  const SizedBox(height: 12),
+                ],
                 if (status == 'in_transit') ...[
                   TextField(controller: _pinCtrl, decoration: const InputDecoration(labelText: 'Buyer PIN')),
+                  const SizedBox(height: 12),
                   FilledButton(onPressed: _complete, child: const Text('Confirm delivery')),
                 ],
               ],

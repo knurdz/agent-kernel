@@ -37,7 +37,6 @@ class AuthTextField extends StatefulWidget {
     return AuthTextField(
       controller: controller,
       label: 'Phone number',
-      hint: '077 123 4567 or +94...',
       prefixIcon: Icons.phone_outlined,
       keyboardType: TextInputType.phone,
       textInputAction: textInputAction,
