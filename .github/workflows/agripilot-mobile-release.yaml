@@ -1,0 +1,130 @@
+name: AgriPilot Mobile Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version (e.g. 1.0.1 or 1.0.1+12)'
+        required: true
+        type: string
+      api_base_url:
+        description: 'Production API base URL baked into the APK'
+        required: false
+        type: string
+        default: 'https://agripilot.knurdz.org'
+
+permissions:
+  contents: write
+
+env:
+  MOBILE_DIR: use-cases/agri-pilot/mobile
+  TAG_PREFIX: agripilot-mobile-v
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate and parse version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?$ ]]; then
+            echo "::error::Invalid version '$VERSION'. Expected format: 1.0.1 or 1.0.1+12"
+            exit 1
+          fi
+
+          VERSION_NAME="${VERSION%%+*}"
+          if [[ "$VERSION" == *"+"* ]]; then
+            BUILD_NUMBER="${VERSION#*+}"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NAME"
+            BUILD_NUMBER=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          fi
+
+          TAG="${TAG_PREFIX}${VERSION_NAME}"
+          APK_NAME="agripilot-${VERSION_NAME}.apk"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' already exists. Choose a new version."
+            exit 1
+          fi
+
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "Parsed version_name=$VERSION_NAME build_number=$BUILD_NUMBER tag=$TAG"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('use-cases/agri-pilot/mobile/pubspec.lock') }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.MOBILE_DIR }}
+        run: flutter pub get
+
+      - name: Run tests
+        working-directory: ${{ env.MOBILE_DIR }}
+        run: flutter test
+
+      - name: Build release APK
+        working-directory: ${{ env.MOBILE_DIR }}
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.version_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}" \
+            --dart-define=API_BASE_URL="${{ inputs.api_base_url }}"
+
+          cp build/app/outputs/flutter-apk/app-release.apk "${GITHUB_WORKSPACE}/${{ steps.version.outputs.apk_name }}"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          python3 .github/scripts/agripilot_mobile_changelog.py \
+            --tag-prefix "${{ env.TAG_PREFIX }}" \
+            --version "${{ steps.version.outputs.version_name }}" \
+            --api-base-url "${{ inputs.api_base_url }}" \
+            --apk-name "${{ steps.version.outputs.apk_name }}" \
+            --output release_body.md
+
+      - name: Create draft GitHub release
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "AgriPilot Mobile ${{ steps.version.outputs.version_name }}" \
+            --notes-file release_body.md \
+            --draft \
+            --latest=false \
+            "${{ steps.version.outputs.apk_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## AgriPilot Mobile draft release"
+            echo ""
+            echo "- **Version:** ${{ steps.version.outputs.version_name }} (${{ steps.version.outputs.build_number }})"
+            echo "- **Tag:** \`${{ steps.version.outputs.tag }}\`"
+            echo "- **API:** \`${{ inputs.api_base_url }}\`"
+            echo "- **APK:** \`${{ steps.version.outputs.apk_name }}\`"
+            echo ""
+            echo "Open the draft release on GitHub, edit the notes, then publish when ready."
+          } >> "$GITHUB_STEP_SUMMARY"

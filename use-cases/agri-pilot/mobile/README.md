@@ -1,6 +1,28 @@
-# AgriPilot Mobile (Android)
+<p align="center">
+  <a href="../README.md">
+    <img src="../docs/branding/agripilot-icon.png" alt="AgriPilot logo" width="96" />
+  </a>
+</p>
 
-Android-only Flutter client for the AgriPilot backend in `use-cases/agri-pilot/`.
+<h2 align="center"><a href="../README.md">AgriPilot</a> Mobile</h2>
+
+<p align="center">
+  Android Flutter client — AI chat, marketplace, and live delivery for the AgriPilot platform
+</p>
+
+<p align="center">
+  <a href="../README.md"><strong>Project README</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile">Download APK</a>
+  &nbsp;·&nbsp;
+  <a href="#setup">Setup</a>
+  &nbsp;·&nbsp;
+  <a href="#production-release">Release</a>
+</p>
+
+---
+
+Full project overview, architecture, VPS deployment, and API reference live in the parent [`README.md`](../README.md).
 
 ## Prerequisites
 
@@ -52,6 +74,7 @@ Without Firebase, the app runs normally; push registration is skipped.
 | Farmer listings + import plant | `/api/farmer/listings`, `/api/farmer/listings/{id}/import-plant` |
 | Buyer browse/match/connect + listing insights | `/api/buyer/*` |
 | Connections + contact | `/api/*/connections*` |
+| Rider jobs + live tracking | `/api/rider/*`, `/api/*/orders/{id}/tracking` |
 | Profile | `PATCH /api/auth/me` |
 | WhatsApp / Telegram | `/api/auth/me/channels`, `/api/config/public` |
 
@@ -62,9 +85,18 @@ flutter test
 flutter analyze
 ```
 
-## Production release (VPS)
+## Production release
 
 Production uses HTTPS via Caddy on your VPS domain. **Do not** ship release APKs with `http://` base URLs.
+
+### GitHub Actions (recommended)
+
+1. Deploy the backend (see parent [`README.md`](../README.md#production-vps-deployment))
+2. Run **Actions → AgriPilot Mobile Release** with a `version` (e.g. `1.0.1`) and optional `api_base_url`
+3. Edit the draft release notes on GitHub, then publish
+4. Download the APK from [GitHub Releases](https://github.com/yaalalabs/agent-kernel/releases?q=agripilot-mobile)
+
+### Local release build
 
 ```bash
 flutter build apk --release --dart-define=API_BASE_URL=https://your-domain.example.com
@@ -72,9 +104,9 @@ flutter build apk --release --dart-define=API_BASE_URL=https://your-domain.examp
 
 Requirements:
 
-- Backend deployed with `./deploy/deploy-vps.sh` (see parent [`README.md`](../README.md) "VPS deployment")
+- Backend deployed with `./deploy/deploy-vps.sh`
 - DNS and TLS working (`https://your-domain.example.com/health` returns `{"status":"ok"}`)
-- Cleartext HTTP is allowed only in **debug** builds (`network_security_config.xml`); release builds expect HTTPS
+- Cleartext HTTP is allowed only in **debug** builds; release builds expect HTTPS
 
 ## Debug networking
 

@@ -6,7 +6,6 @@ import 'package:latlong2/latlong.dart';
 
 void main() {
   test('decodePolyline decodes a simple encoded string', () {
-    // Encoded polyline for roughly Kandy area (sample points)
     const encoded = '_p~iF~ps|U_ulLnnqC_mqNvxq`@';
     final points = decodePolyline(encoded);
     expect(points, isNotEmpty);
@@ -75,6 +74,40 @@ void main() {
     expect(formatDistanceMeters(850), '850 m');
     expect(formatDistanceMeters(2400), '2.4 km');
     expect(formatDurationSeconds(180), '~3 min');
+  });
+
+  test('trackingHeadline returns friendly status copy', () {
+    expect(
+      trackingHeadline(status: 'in_transit', deliveryStatus: 'in_transit', fulfillmentMode: 'delivery'),
+      'Order is on the way to you',
+    );
+    expect(
+      trackingHeadline(status: 'searching_rider', fulfillmentMode: 'delivery'),
+      'Finding a nearby rider…',
+    );
+    expect(
+      trackingHeadline(status: 'delivered', fulfillmentMode: 'delivery'),
+      'Order successfully delivered',
+    );
+  });
+
+  test('trackingStepIndex maps delivery lifecycle', () {
+    expect(
+      trackingStepIndex(status: 'rider_assigned', deliveryStatus: 'assigned', fulfillmentMode: 'delivery'),
+      1,
+    );
+    expect(
+      trackingStepIndex(status: 'in_transit', deliveryStatus: 'in_transit', fulfillmentMode: 'delivery'),
+      3,
+    );
+    expect(
+      trackingStepIndex(status: 'ready', fulfillmentMode: 'pickup'),
+      2,
+    );
+  });
+
+  test('formatTrackingTimestamp formats ISO dates', () {
+    expect(formatTrackingTimestamp('2026-08-01T14:30:00Z'), isNotEmpty);
   });
 
   test('OrderItem parses delivery coordinates', () {

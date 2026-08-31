@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "AgriPilot Runtime",
+    "subtitle": "Agent Kernel + LangGraph on a dedicated VPS",
+    "output": "agripilot.architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "request-path",
+        "label": "Primary request path",
+        "focus": ["users", "cdn", "lb", "api", "db"],
+        "note": "Android JWT chat flows through Caddy to RESTAPI, supervisor, and Postgres."
+      },
+      {
+        "id": "agents-and-cache",
+        "label": "Agents and durable state",
+        "focus": ["auth", "api", "cache", "queue", "worker"],
+        "note": "Messaging webhooks, Redis sessions, specialist handoffs, and external APIs."
+      },
+      {
+        "id": "knowledge",
+        "label": "Knowledge and media",
+        "focus": ["cdn", "s3", "api", "queue"],
+        "note": "Chroma RAG index and on-disk plant/listing media served by the app."
+      }
+    ]
+  },
+  "components": [
+    { "id": "users", "type": "frontend", "label": "Android App", "sublabel": "Flutter · JWT", "pos": [40, 300], "size": [120, 60] },
+    { "id": "auth", "type": "security", "label": "Messaging", "sublabel": "WhatsApp · Telegram", "pos": [40, 110], "size": [120, 64], "tag": "farmer gate" },
+    { "id": "cdn", "type": "cloud", "label": "Caddy", "sublabel": "HTTPS :443", "pos": [250, 300], "size": [130, 60] },
+    { "id": "lb", "type": "backend", "label": "RESTAPI", "sublabel": "Agent Kernel", "pos": [460, 300], "size": [130, 60] },
+    { "id": "api", "type": "backend", "label": "Supervisor", "sublabel": "LangGraph triage", "pos": [670, 300], "size": [130, 60] },
+    { "id": "cache", "type": "database", "label": "Redis", "sublabel": "sessions · threads", "pos": [670, 150], "size": [130, 60] },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "marketplace :5432", "pos": [880, 300], "size": [130, 60] },
+    { "id": "s3", "type": "database", "label": "ChromaDB", "sublabel": "crop RAG index", "pos": [250, 440], "size": [130, 60] },
+    { "id": "queue", "type": "backend", "label": "Specialists", "sublabel": "4 agents", "pos": [670, 440], "size": [130, 60] },
+    { "id": "worker", "type": "external", "label": "External APIs", "sublabel": "LLM · weather · OSRM", "pos": [880, 440], "size": [130, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "VPS private Docker network", "wraps": ["cdn", "lb", "api", "cache", "db", "s3", "queue", "worker"] },
+    { "kind": "security-group", "label": "Public edge (80/443)", "wraps": ["lb", "api"] }
+  ],
+  "connections": [
+    { "id": "users-to-cdn", "from": "users", "to": "cdn", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "jwt-verification", "from": "auth", "to": "api", "label": "webhooks", "variant": "security", "fromSide": "right", "toSide": "top", "via": [[620, 142], [620, 246], [735, 246]] },
+    { "id": "cdn-to-lb", "from": "cdn", "to": "lb" },
+    { "id": "static-assets", "from": "cdn", "to": "s3", "label": "RAG index", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 58 },
+    { "id": "lb-to-api", "from": "lb", "to": "api" },
+    { "id": "cache-read-through", "from": "api", "to": "cache", "label": "sessions", "fromSide": "top", "toSide": "bottom", "labelDy": -68 },
+    { "id": "api-sql", "from": "api", "to": "db", "label": "SQL" },
+    { "id": "enqueue-job", "from": "api", "to": "queue", "label": "handoff", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 58 },
+    { "id": "queue-to-worker", "from": "queue", "to": "worker" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Clients",
+      "items": [
+        "Flutter Android: marketplace, plant tracking, live delivery maps",
+        "WhatsApp and Telegram gate active farmer accounts before the agent runs",
+        "Mobile session id agri:user:{user_id} across advisor threads"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Agent Kernel",
+      "items": [
+        "RESTAPI mounts marketplace routers and channel handlers",
+        "LangGraph supervisor routes to vision, knowledge, resource, delivery",
+        "Tool guard limits external calls; order mutations stay REST-only"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Production VPS",
+      "items": [
+        "Caddy terminates TLS; Postgres and Redis are not published publicly",
+        "Redis-backed sessions and attachments survive container restarts",
+        "deploy/deploy-vps.sh builds, migrates, and verifies /health"
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir uv
 
 ARG APP_UID=10001
 RUN useradd --create-home --uid ${APP_UID} --shell /usr/sbin/nologin agripilot \
-    && mkdir -p /app/data/plant_media /home/agripilot/.cache/chroma /home/agripilot/.cache/uv \
+    && mkdir -p /app/data/plant_media /app/data/listing_media /home/agripilot/.cache/chroma /home/agripilot/.cache/uv \
     && chown -R agripilot:agripilot /app /home/agripilot
 
 WORKDIR /app

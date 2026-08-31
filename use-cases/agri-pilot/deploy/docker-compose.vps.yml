@@ -80,6 +80,7 @@ services:
       AK_THREAD__TYPE: redis
       AK_THREAD__REDIS__URL: redis://redis:6379
       AGRIPILOT_PLANT_MEDIA_ROOT: /app/data/plant_media
+      AGRIPILOT_LISTING_MEDIA_ROOT: /app/data/listing_media
     depends_on:
       db:
         condition: service_healthy
@@ -92,6 +93,7 @@ services:
     volumes:
       - chroma-cache:/home/agripilot/.cache/chroma
       - plant-media:/app/data/plant_media
+      - listing-media:/app/data/listing_media
     healthcheck:
       test:
         [
@@ -141,5 +143,6 @@ volumes:
   redisdata:
   chroma-cache:
   plant-media:
+  listing-media:
   caddy-data:
   caddy-config:

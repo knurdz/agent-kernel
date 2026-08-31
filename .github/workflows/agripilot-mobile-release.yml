@@ -1,0 +1,136 @@
+name: AgriPilot Mobile Release
+
+on:
+  push:
+    tags:
+      - 'agripilot-v*'
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'Production API base URL (overrides repo variable AGRIPILOT_API_BASE_URL)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: use-cases/agri-pilot/mobile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Resolve API base URL
+        id: api
+        env:
+          REPO_VAR: ${{ vars.AGRIPILOT_API_BASE_URL }}
+          INPUT_URL: ${{ inputs.api_base_url }}
+        run: |
+          url="${INPUT_URL:-$REPO_VAR}"
+          url="${url%/}"
+          if [[ -z "${url}" ]]; then
+            echo "::error::Set repository variable AGRIPILOT_API_BASE_URL or pass workflow_dispatch input api_base_url."
+            exit 1
+          fi
+          if [[ "${url}" != https://* ]]; then
+            echo "::error::Release APK requires an HTTPS API base URL (got: ${url})."
+            exit 1
+          fi
+          echo "url=${url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve release version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == agripilot-v* ]]; then
+            version="${GITHUB_REF_NAME#agripilot-v}"
+          else
+            version="$(date -u +'%Y.%m.%d')-${GITHUB_SHA::7}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=agripilot-v${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=API_BASE_URL=${{ steps.api.outputs.url }}
+
+      - name: Rename APK artifact
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "../agripilot-${{ steps.version.outputs.version }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agripilot-android-apk
+          path: use-cases/agri-pilot/agripilot-${{ steps.version.outputs.version }}.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          API_URL: ${{ steps.api.outputs.url }}
+        run: |
+          cat > /tmp/release-notes.md <<EOF
+          ## AgriPilot Android ${VERSION}
+
+          Built against \`${API_URL}\`.
+
+          ### Install
+          1. Download \`agripilot-${VERSION}.apk\` below.
+          2. Enable "Install unknown apps" for your browser or files app.
+          3. Open the APK on your Android device.
+
+          ### Build info
+          - Commit: \`${GITHUB_SHA::7}\`
+          - Workflow: \`${GITHUB_WORKFLOW}\`
+          EOF
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "AgriPilot Android ${VERSION}" \
+            --notes-file /tmp/release-notes.md \
+            "../agripilot-${VERSION}.apk"
+
+      - name: Publish workflow_dispatch build to Release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          API_URL: ${{ steps.api.outputs.url }}
+        run: |
+          cat > /tmp/release-notes.md <<EOF
+          ## AgriPilot Android ${VERSION}
+
+          Manual workflow build against \`${API_URL}\`.
+
+          Commit: \`${GITHUB_SHA::7}\`
+          EOF
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "../agripilot-${VERSION}.apk" --clobber
+          else
+            gh release create "${TAG}" \
+              --title "AgriPilot Android ${VERSION}" \
+              --notes-file /tmp/release-notes.md \
+              "../agripilot-${VERSION}.apk"
+          fi

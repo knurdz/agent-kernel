@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../maps/polyline_utils.dart';
+import '../theme/app_theme.dart';
 
 /// OpenStreetMap tile URL (no API key required).
 const _osmTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -69,9 +70,13 @@ class _MapAddressPickerState extends State<MapAddressPicker> {
                   markers: [
                     Marker(
                       point: _pin,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                      width: 48,
+                      height: 48,
+                      child: _MapPinBadge(
+                        color: Theme.of(context).colorScheme.error,
+                        icon: Icons.location_on,
+                        size: 44,
+                      ),
                     ),
                   ],
                 ),
@@ -115,6 +120,84 @@ class _MapAddressPickerState extends State<MapAddressPicker> {
   }
 }
 
+/// Circular map pin with white border and drop shadow.
+class _MapPinBadge extends StatelessWidget {
+  const _MapPinBadge({
+    required this.color,
+    required this.icon,
+    this.size = 40,
+  });
+
+  final Color color;
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: size * 0.5),
+    );
+  }
+}
+
+/// Rider navigation puck with heading arrow.
+class _RiderPuck extends StatelessWidget {
+  const _RiderPuck({this.heading});
+
+  final double? heading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFF1565C0).withValues(alpha: 0.18),
+          ),
+        ),
+        Transform.rotate(
+          angle: (heading ?? 0) * 3.1415926535 / 180,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1565C0),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.navigation, color: Colors.white, size: 22),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Live tracking map with pickup, delivery, rider markers and optional route polyline.
 class DeliveryTrackingMap extends StatefulWidget {
   const DeliveryTrackingMap({
@@ -125,6 +208,8 @@ class DeliveryTrackingMap extends StatefulWidget {
     this.polylinePoints,
     this.riderHeading,
     this.followRider = false,
+    this.showControls = true,
+    this.onOpenMaps,
   });
 
   final LatLng? pickup;
@@ -133,14 +218,18 @@ class DeliveryTrackingMap extends StatefulWidget {
   final List<LatLng>? polylinePoints;
   final double? riderHeading;
   final bool followRider;
+  final bool showControls;
+  final VoidCallback? onOpenMaps;
 
   @override
-  State<DeliveryTrackingMap> createState() => _DeliveryTrackingMapState();
+  State<DeliveryTrackingMap> createState() => DeliveryTrackingMapState();
 }
 
-class _DeliveryTrackingMapState extends State<DeliveryTrackingMap> {
+class DeliveryTrackingMapState extends State<DeliveryTrackingMap> {
   final _mapController = MapController();
   List<LatLng>? _lastFitPoints;
+
+  MapController get mapController => _mapController;
 
   @override
   void dispose() {
@@ -151,21 +240,35 @@ class _DeliveryTrackingMapState extends State<DeliveryTrackingMap> {
   @override
   void didUpdateWidget(covariant DeliveryTrackingMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _maybeRecenter();
+    if (widget.followRider && widget.rider != null) {
+      _followRider();
+    }
+  }
+
+  void fitRoute() {
+    final points = _allPoints();
+    if (points.isEmpty) return;
+    _lastFitPoints = List.of(points);
+    final center = centerForPoints(points);
+    final zoom = zoomForPoints(points);
+    _mapController.move(center, zoom);
+  }
+
+  void _followRider() {
+    if (widget.rider != null) {
+      _mapController.move(widget.rider!, _mapController.camera.zoom.clamp(5.0, 18.0));
+    }
   }
 
   void _maybeRecenter() {
     final points = _allPoints();
     if (points.isEmpty) return;
     if (widget.followRider && widget.rider != null) {
-      _mapController.move(widget.rider!, _mapController.camera.zoom);
+      _followRider();
       return;
     }
     if (_pointsChanged(points)) {
-      _lastFitPoints = List.of(points);
-      final center = centerForPoints(points);
-      final zoom = zoomForPoints(points);
-      _mapController.move(center, zoom);
+      fitRoute();
     }
   }
 
@@ -185,7 +288,9 @@ class _DeliveryTrackingMapState extends State<DeliveryTrackingMap> {
     if (widget.pickup != null) pts.add(widget.pickup!);
     if (widget.delivery != null) pts.add(widget.delivery!);
     if (widget.rider != null) pts.add(widget.rider!);
-    if (widget.polylinePoints != null) pts.addAll(widget.polylinePoints!);
+    if (widget.polylinePoints != null && widget.polylinePoints!.length >= 2) {
+      pts.addAll(widget.polylinePoints!);
+    }
     return pts;
   }
 
@@ -194,63 +299,132 @@ class _DeliveryTrackingMapState extends State<DeliveryTrackingMap> {
     final points = _allPoints();
     final center = widget.rider ?? widget.pickup ?? widget.delivery ?? defaultMapCenter();
     final zoom = points.length >= 2 ? zoomForPoints(points) : 14.0;
+    final primary = Theme.of(context).colorScheme.primary;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRecenter());
 
     final markers = <Marker>[];
     if (widget.pickup != null) {
-      markers.add(_marker(widget.pickup!, Colors.green, Icons.store, 'Farm pickup'));
+      markers.add(
+        Marker(
+          point: widget.pickup!,
+          width: 48,
+          height: 48,
+          child: const _MapPinBadge(color: AppColors.primary, icon: Icons.storefront, size: 44),
+        ),
+      );
     }
     if (widget.delivery != null) {
-      markers.add(_marker(widget.delivery!, Colors.orange, Icons.home, 'Delivery'));
+      markers.add(
+        Marker(
+          point: widget.delivery!,
+          width: 48,
+          height: 48,
+          child: const _MapPinBadge(color: AppColors.secondary, icon: Icons.home, size: 44),
+        ),
+      );
     }
     if (widget.rider != null) {
-      markers.add(_riderMarker(widget.rider!, widget.riderHeading));
+      markers.add(
+        Marker(
+          point: widget.rider!,
+          width: 56,
+          height: 56,
+          child: _RiderPuck(heading: widget.riderHeading),
+        ),
+      );
     }
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(initialCenter: center, initialZoom: zoom, minZoom: 5, maxZoom: 18),
+    return Stack(
       children: [
-        TileLayer(
-          urlTemplate: _osmTileUrl,
-          userAgentPackageName: 'com.example.mobile',
-        ),
-        if (widget.polylinePoints != null && widget.polylinePoints!.length >= 2)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: widget.polylinePoints!,
-                color: Theme.of(context).colorScheme.primary,
-                strokeWidth: 4,
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(initialCenter: center, initialZoom: zoom, minZoom: 5, maxZoom: 18),
+          children: [
+            TileLayer(
+              urlTemplate: _osmTileUrl,
+              userAgentPackageName: 'com.example.mobile',
+            ),
+            if (widget.polylinePoints != null && widget.polylinePoints!.length >= 2) ...[
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: widget.polylinePoints!,
+                    color: Colors.white,
+                    strokeWidth: 8,
+                  ),
+                ],
+              ),
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: widget.polylinePoints!,
+                    color: primary,
+                    strokeWidth: 5,
+                  ),
+                ],
               ),
             ],
+            MarkerLayer(markers: markers),
+          ],
+        ),
+        if (widget.showControls)
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _MapControlButton(
+                  icon: Icons.center_focus_strong,
+                  tooltip: 'Fit route',
+                  onPressed: fitRoute,
+                ),
+                if (widget.onOpenMaps != null) ...[
+                  const SizedBox(height: 8),
+                  _MapControlButton(
+                    icon: Icons.directions,
+                    tooltip: 'Open in Maps',
+                    onPressed: widget.onOpenMaps!,
+                  ),
+                ],
+              ],
+            ),
           ),
-        MarkerLayer(markers: markers),
       ],
     );
   }
+}
 
-  Marker _marker(LatLng point, Color color, IconData icon, String label) {
-    return Marker(
-      point: point,
-      width: 40,
-      height: 40,
-      child: Tooltip(
-        message: label,
-        child: Icon(icon, color: color, size: 36),
-      ),
-    );
-  }
+class _MapControlButton extends StatelessWidget {
+  const _MapControlButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
 
-  Marker _riderMarker(LatLng point, double? heading) {
-    return Marker(
-      point: point,
-      width: 44,
-      height: 44,
-      child: Transform.rotate(
-        angle: (heading ?? 0) * 3.1415926535 / 180,
-        child: const Icon(Icons.delivery_dining, color: Colors.blue, size: 40),
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 3,
+      shadowColor: Colors.black26,
+      borderRadius: BorderRadius.circular(12),
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Tooltip(
+          message: tooltip,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, size: 22, color: Theme.of(context).colorScheme.primary),
+          ),
+        ),
       ),
     );
   }
